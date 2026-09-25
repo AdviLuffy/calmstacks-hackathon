@@ -444,23 +444,36 @@ __SUBNAV__
       <!-- RECONSTRUCTED ARTIFACT CARD -->
       <div class="panel" style="margin-bottom: 0;">
         <div class="panel-header">
-          <span class="panel-title">[P1] Reconstructed Byte Artifact</span>
+          <span class="panel-title" id="artifact-card-title">[P1] Reconstructed Byte Artifact</span>
           <span class="tag tag-green" id="recon-status-tag">ANALYSIS PENDING</span>
         </div>
-        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 1.25rem;">
+        <p id="artifact-card-desc" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 1.25rem;">
           Authentic PDF byte reconstruction assembled from carved fragments without synthetic interpolation.
         </p>
 
+        <!-- INTACT DISTINCTION BANNER (rendered conditionally) -->
+        <div id="intact-distinction-banner" style="display: none; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 2px; padding: 0.85rem 1rem; margin-bottom: 1.25rem; font-size: 12.5px; line-height: 1.5;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;">
+            <span class="tag tag-green" style="font-size: 10px; font-weight: 700;">INTACT VERIFIED vs RECONSTRUCTED</span>
+          </div>
+          <div style="color: var(--text-primary);">
+            <strong>Intact Verification:</strong> This evidence file was positively identified and validated as a complete, sequential PDF. The original bitstream was preserved verbatim without block carving, sector slicing, or fragment reassembly.
+          </div>
+          <div style="color: var(--text-muted); font-size: 11.5px; margin-top: 0.35rem;">
+            <em>Forensic Distinction:</em> Reconstruction is reserved for raw or damaged disk images requiring block carving. Intact PDF files undergo strict structural validation and cryptographic hashing with zero fragment fabrication.
+          </div>
+        </div>
+
         <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: 2px; padding: 1rem; margin-bottom: 1.25rem; font-family: var(--font-mono); font-size: 11.5px;">
           <div style="margin-bottom: 0.5rem; display: flex; justify-content: space-between;">
-            <span style="color: var(--text-muted);">ARTIFACT SHA-256:</span>
+            <span style="color: var(--text-muted);" id="digest-label">ARTIFACT SHA-256:</span>
             <span class="tag tag-copper">IMMUTABLE</span>
           </div>
           <div id="recon-sha256" class="hash-cell" style="font-size: 11.5px; margin-bottom: 0.75rem;">Loading digest&hellip;</div>
           <div style="display: flex; justify-content: space-between; color: var(--text-secondary); border-top: 1px solid var(--border-subtle); padding-top: 0.5rem;">
             <span>SIZE: <strong id="recon-size" style="color: var(--text-primary);">&hellip;</strong></span>
             <span>FRAGMENTS: <strong id="recon-frags" style="color: var(--text-primary);">&hellip;</strong></span>
-            <span>BYTE COVERAGE: <strong style="color: var(--accent-green);">100% AUTHENTIC</strong></span>
+            <span id="coverage-span">BYTE COVERAGE: <strong id="coverage-val" style="color: var(--accent-green);">100% AUTHENTIC</strong></span>
           </div>
           <div id="pdf-structure-box" style="margin-top: 0.75rem; border-top: 1px dashed var(--border-subtle); padding-top: 0.5rem; font-size: 11px; color: var(--text-muted); line-height: 1.5;">
             <span style="color: var(--accent-copper); font-weight: 600;">SPECIFICATION STATUS:</span>
@@ -475,7 +488,7 @@ __SUBNAV__
           <a href="/api/sessions/__SESSION_ID__/reconstruction/download" class="btn btn-primary" id="btn-download" download>
             &darr; Download Reconstructed PDF
           </a>
-          <a href="/investigations/__SESSION_ID__/provenance" class="btn btn-secondary">
+          <a href="/investigations/__SESSION_ID__/provenance" class="btn btn-secondary" id="btn-provenance">
             View Provenance Ledger &rarr;
           </a>
         </div>
@@ -491,10 +504,10 @@ __SUBNAV__
         <div style="display: flex; flex-direction: column; gap: 0.85rem;" id="stages-container">
           <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 0.85rem; border-radius: 2px;">
             <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11.5px; margin-bottom: 0.35rem;">
-              <span style="color: var(--accent-copper); font-weight: 700;">STAGE 1: P1 RECOVERY ENGINE</span>
-              <span class="tag tag-green">VERIFIED</span>
+              <span id="stage1-title" style="color: var(--accent-copper); font-weight: 700;">STAGE 1: P1 RECOVERY ENGINE</span>
+              <span class="tag tag-green" id="stage1-tag">VERIFIED</span>
             </div>
-            <div style="font-size: 12px; color: var(--text-secondary);">
+            <div id="stage1-desc" style="font-size: 12px; color: var(--text-secondary);">
               Deterministic block carving, PDF marker parsing, and authentic byte assembly.
             </div>
           </div>
@@ -536,6 +549,10 @@ __SUBNAV__
 <script>
   const SESSION_ID = "__SESSION_ID__";
 
+  function escapeHtml(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   async function loadOverview() {
     try {
       // 1. Fetch Session Detail
@@ -573,19 +590,61 @@ __SUBNAV__
         const recon = await recRes.json();
         document.getElementById('recon-sha256').textContent = recon.reconstructed_sha256 || 'N/A';
         document.getElementById('recon-size').textContent = (recon.pdf_size_bytes != null ? recon.pdf_size_bytes : 2048) + ' bytes';
-        document.getElementById('recon-frags').textContent = recon.is_intact_passthrough ? '0 (Intact Stream)' : ((recon.fragments_placed || 0) + ' / ' + (recon.fragments_carved || 0) + ' fragments');
         const stTag = document.getElementById('recon-status-tag');
+        const cardTitle = document.getElementById('artifact-card-title');
+        const cardDesc = document.getElementById('artifact-card-desc');
+        const intactBanner = document.getElementById('intact-distinction-banner');
+        const dlBtn = document.getElementById('btn-download');
+        const provBtn = document.getElementById('btn-provenance');
+        const s1Title = document.getElementById('stage1-title');
+        const s1Tag = document.getElementById('stage1-tag');
+        const s1Desc = document.getElementById('stage1-desc');
+        const digestLabel = document.getElementById('digest-label');
+        const coverageVal = document.getElementById('coverage-val');
 
         if (recon.is_intact_passthrough) {
           stTag.textContent = 'INTACT VERIFIED';
           stTag.className = 'tag tag-green';
+          if (cardTitle) cardTitle.textContent = '[PASSTHROUGH] Intact Document Verification';
+          if (cardDesc) cardDesc.textContent = 'Original document bitstream validated as an intact, complete PDF. Exact original bytes preserved without block carving, sector slicing, or fragment reconstruction.';
+          if (intactBanner) intactBanner.style.display = 'block';
+          if (dlBtn) dlBtn.innerHTML = '&darr; Download Verified Original PDF';
+          if (provBtn) provBtn.textContent = 'View Bitstream Ledger \u2192';
+          if (digestLabel) digestLabel.textContent = 'ORIGINAL BITSTREAM SHA-256:';
+          if (coverageVal) coverageVal.textContent = '100% ORIGINAL (UNTOUCHED)';
+          document.getElementById('recon-frags').textContent = '0 (Intact Stream)';
+
+          if (s1Title) s1Title.textContent = 'STAGE 1: INTACT BITSTREAM VALIDATION';
+          if (s1Tag) {
+            s1Tag.textContent = 'PASSTHROUGH VERIFIED';
+            s1Tag.className = 'tag tag-green';
+          }
+          if (s1Desc) s1Desc.textContent = 'Direct ISO 32000-1 syntax validation. Preserved original byte stream without block carving or fragment assembly.';
         } else if (recon.complete && recon.status === 'structurally_valid') {
           stTag.textContent = 'RECONSTRUCTED';
           stTag.className = 'tag tag-green';
+          if (cardTitle) cardTitle.textContent = '[P1] Reconstructed Byte Artifact';
+          if (cardDesc) cardDesc.textContent = 'Authentic PDF byte reconstruction assembled from carved fragments without synthetic interpolation.';
+          if (intactBanner) intactBanner.style.display = 'none';
+          if (dlBtn) dlBtn.innerHTML = '&darr; Download Reconstructed PDF';
+          if (provBtn) provBtn.textContent = 'View Provenance Ledger \u2192';
+          if (digestLabel) digestLabel.textContent = 'ARTIFACT SHA-256:';
+          if (coverageVal) coverageVal.textContent = '100% AUTHENTIC';
+          document.getElementById('recon-frags').textContent = (recon.fragments_placed || 0) + ' / ' + (recon.fragments_carved || 0) + ' fragments';
         } else if (recon.status === 'incomplete' || !recon.complete) {
           const unplaced = recon.unplaced_fragments_count || 0;
           stTag.textContent = `INCOMPLETE (${unplaced} UNPLACED)`;
           stTag.className = 'tag tag-amber';
+          if (cardTitle) cardTitle.textContent = '[P1] Incomplete Fragment Reconstruction';
+          if (cardDesc) cardDesc.textContent = `Partial assembly: ${unplaced} fragment(s) remain unplaced. Reconstruction halted to prevent unverified fabrication. Output is partial and unverified.`;
+          if (intactBanner) intactBanner.style.display = 'none';
+          if (dlBtn) dlBtn.innerHTML = '&darr; Download Partial PDF (Unverified)';
+          document.getElementById('recon-frags').textContent = (recon.fragments_placed || 0) + ' / ' + (recon.fragments_carved || 0) + ' fragments';
+          if (s1Tag) {
+            s1Tag.textContent = 'INCOMPLETE';
+            s1Tag.className = 'tag tag-amber';
+          }
+          if (s1Desc) s1Desc.textContent = `Reconstruction halted: ${unplaced} unplaced fragment(s). Authentic ordering could not be mathematically guaranteed.`;
         } else {
           stTag.textContent = (recon.status || 'unknown').toUpperCase();
           stTag.className = 'tag tag-copper';
@@ -622,7 +681,19 @@ __SUBNAV__
             <div style="margin-top: 1rem;">
               <strong style="font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-amber);">Advisory Warnings (${warnings.length}):</strong>
               <div style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
-                ${warnings.map(w => `<div class="notice notice-warning" style="margin-bottom: 0;"><strong>[${w.code || 'WARN'}]</strong> ${w.message || w.detail || ''}</div>`).join('')}
+                ${warnings.map(w => {
+                  if (w.code === 'outputs_hash_unavailable') {
+                    return `
+                      <div class="notice notice-warning" style="margin-bottom: 0;">
+                        <div><strong>[outputs_hash_unavailable]</strong> ${escapeHtml(w.message || '')}</div>
+                        <div style="margin-top: 0.35rem; font-size: 11.5px; color: var(--text-secondary); line-height: 1.45; border-top: 1px dashed rgba(217, 119, 6, 0.3); padding-top: 0.35rem;">
+                          <strong>Contract Integrity Note:</strong> The M0 frozen contract specifies that <code>audit.outputs_hash</code> is computed over the finalized intelligence report body. Because the report schema remains an unfrozen boundary in M0, fabricating an arbitrary hash would violate cryptographic provenance. P3 intentionally withholds this field and emits this standard contract warning to guarantee evidentiary honesty.
+                        </div>
+                      </div>
+                    `;
+                  }
+                  return `<div class="notice notice-warning" style="margin-bottom: 0;"><strong>[${escapeHtml(w.code || 'WARN')}]</strong> ${escapeHtml(w.message || w.detail || '')}</div>`;
+                }).join('')}
               </div>
             </div>
           `;
@@ -831,9 +902,9 @@ __SUBNAV__
   <div class="container-wide">
     <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
       <div>
-        <div class="section-eyebrow">Evidentiary Admissibility</div>
-        <h1 class="section-title">100% Byte-Level Provenance Ledger</h1>
-        <p style="color: var(--text-secondary); font-size: 13.5px;">
+        <div class="section-eyebrow" id="prov-eyebrow">Evidentiary Admissibility</div>
+        <h1 class="section-title" id="prov-title">100% Byte-Level Provenance Ledger</h1>
+        <p style="color: var(--text-secondary); font-size: 13.5px;" id="prov-desc">
           Unbroken mathematical mapping from every output byte in the reconstructed file back to its physical origin.
         </p>
       </div>
@@ -841,7 +912,7 @@ __SUBNAV__
         <a href="/api/sessions/__SESSION_ID__/reconstruction/view" target="_blank" class="btn btn-secondary">
           &#8599; View in Browser Tab
         </a>
-        <a href="/api/sessions/__SESSION_ID__/reconstruction/download" class="btn btn-primary" download>
+        <a href="/api/sessions/__SESSION_ID__/reconstruction/download" class="btn btn-primary" id="prov-download-btn" download>
           &darr; Download Reconstructed PDF
         </a>
       </div>
@@ -851,7 +922,7 @@ __SUBNAV__
     <div class="panel" style="background: var(--bg-surface); margin-bottom: 1.5rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
         <div>
-          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">RECONSTRUCTED SHA-256 HASH</span>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" id="prov-hash-label">RECONSTRUCTED SHA-256 HASH</span>
           <span id="prov-sha256" class="hash-cell" style="font-size: 13px; font-weight: 700;">Loading digest&hellip;</span>
         </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
@@ -867,7 +938,7 @@ __SUBNAV__
     <!-- PROVENANCE TABLE -->
     <div class="panel" style="padding: 0; overflow: hidden;">
       <div style="padding: 0.75rem 1.25rem; border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
-        <span class="panel-title">Authentic Assembly Sequence &amp; Physical Mappings</span>
+        <span class="panel-title" id="prov-panel-title">Authentic Assembly Sequence &amp; Physical Mappings</span>
         <span class="tag tag-green" id="prov-sub-tag">ZERO INTERPOLATION</span>
       </div>
 
@@ -875,11 +946,11 @@ __SUBNAV__
         <table class="data-table" id="prov-table">
           <thead>
             <tr>
-              <th>Output Byte Range</th>
-              <th>Source Media Offset</th>
-              <th>Fragment ID</th>
+              <th id="th-out-range">Output Byte Range</th>
+              <th id="th-src-offset">Source Media Offset</th>
+              <th id="th-frag-id">Fragment ID</th>
               <th>Length</th>
-              <th>Contiguity Verification</th>
+              <th id="th-contig">Contiguity Verification</th>
               <th>Authentic Status</th>
             </tr>
           </thead>
@@ -908,9 +979,11 @@ __SUBNAV__
       const tag = document.getElementById('prov-tag');
       const subTag = document.getElementById('prov-sub-tag');
       const hashEl = document.getElementById('prov-sha256');
+      const hashLabel = document.getElementById('prov-hash-label');
 
       if (data.is_intact_passthrough) {
         hashEl.textContent = data.reconstructed_sha256 || 'N/A';
+        if (hashLabel) hashLabel.textContent = 'ORIGINAL BITSTREAM SHA-256 HASH';
         if (dot) dot.style.background = 'var(--accent-green)';
         if (covText) covText.textContent = 'INTACT PASSTHROUGH: 100% ORIGINAL';
         if (tag) {
@@ -921,6 +994,16 @@ __SUBNAV__
           subTag.textContent = 'EXACT BITSTREAM PRESERVED';
           subTag.className = 'tag tag-green';
         }
+        const eyebrow = document.getElementById('prov-eyebrow');
+        const title = document.getElementById('prov-title');
+        const desc = document.getElementById('prov-desc');
+        const dlBtn = document.getElementById('prov-download-btn');
+        const panelTitle = document.getElementById('prov-panel-title');
+        if (eyebrow) eyebrow.textContent = 'Intact Bitstream Verification';
+        if (title) title.textContent = 'Original Bitstream Integrity Ledger';
+        if (desc) desc.textContent = 'Verifiable cryptographic attestation of direct, intact PDF ingestion. Exact original bytes preserved without sector slicing or fragment reconstruction.';
+        if (dlBtn) dlBtn.innerHTML = '&darr; Download Verified Original PDF';
+        if (panelTitle) panelTitle.textContent = 'Direct Bitstream Ingestion Record';
 
         tbody.innerHTML = `
           <tr>
