@@ -36,6 +36,9 @@ from app.routers import health as health_routes
 from app.routers import meta as meta_routes
 from app.routers import evidence as evidence_routes
 from app.routers import sessions as session_routes
+from app.routers import dashboard as dashboard_routes
+from app.routers.dashboard_ui import DASHBOARD_HTML
+from starlette.responses import HTMLResponse
 from app.schemas.common import api_error_payload, project_warning
 from app.services.interfaces import SessionStore, StageWarning
 from app.services.pipeline import SessionPipeline
@@ -168,6 +171,13 @@ def create_app(
     application.include_router(meta_routes.router, prefix=API_PREFIX)
     application.include_router(session_routes.router, prefix=API_PREFIX)
     application.include_router(evidence_routes.router, prefix=API_PREFIX)
+    application.include_router(dashboard_routes.router, prefix=API_PREFIX)
+
+    @application.get("/", response_class=HTMLResponse, include_in_schema=False)
+    @application.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+    def serve_dashboard() -> HTMLResponse:
+        return HTMLResponse(content=DASHBOARD_HTML)
+
     return application
 
 

@@ -81,7 +81,11 @@ def validate_evidence_bundle_root(bundle: Any) -> tuple[str, ...]:
 
     problems: list[str] = []
 
-    unknown = [key for key in bundle if key not in FROZEN_ROOT_FIELDS]
+    unknown = [
+        key
+        for key in bundle
+        if key not in FROZEN_ROOT_FIELDS and not str(key).startswith("_")
+    ]
     for key in sorted(unknown, key=str):
         problems.append(
             "root field %r is not authorized by the frozen trace.evidence_bundle/1.0 "

@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/index.py"
+    }
+  ],
+  "env": {
+    "TRACE_RECOVERY_ENGINE": "trace_evidence.engine:TraceEvidenceEngine",
+    "TRACE_AI_ENGINE": "trace.intel.engine:TraceIntelligenceEngine",
+    "TRACE_RECOVERY_MODE": "real",
+    "TRACE_AI_MODE": "real"
+  }
+}
