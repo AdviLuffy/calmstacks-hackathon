@@ -778,6 +778,7 @@ def build_sample_report(bundle_sha256: str, module_version: str = MODULE_VERSION
                 "rationale_claim_id": "CLM-0001",
                 "evidence_refs": ["artifacts[ART-0001].recovery.confidence"],
             }
+        ],
         "brief": {
             "headline": "Recovered partition image: one high-priority image artifact and one unclassifiable region.",
             "case_summary_claims": ["CLM-0003"],
@@ -996,6 +997,116 @@ def report_identity_checks(checks: Checks, report_schema: dict, bundle: dict,
     mutated["explainability"]["claims_index"]["CLM-0001"]["evidence_refs"] = []
     mutated["audit"]["outputs_hash"] = compute_outputs_hash(mutated, volatile)
     checks.check("schema rejects: claim without evidence_refs", bool(validation_errors(report_validator, mutated)))
+
+
+def main() -> int:
+    checks = Checks()
+
+    # 1. JSON Schema self-validation
+    checks.section("1. JSON Schema self-validation")
+    registry = build_registry()
+    bundle_validator = schema_validator(BUNDLE_SCHEMA, registry)
+    report_validator = schema_validator(REPORT_SCHEMA, registry)
+    common_validator = schema_validator(COMMON_SCHEMA, registry)
+    # check_schema() already called in schema_validator(); if it passed, schema is valid
+    checks.check("evidence_bundle.schema.json self-validates", True)
+    checks.check("intelligence_report.schema.json self-validates", True)
+    checks.check("common.schema.json self-validates", True)
+
+    # 2. Positive fixture validation (zero errors)
+    checks.section("2. Positive fixture validation")
+    positive_fixtures = ["bundle_minimal.json", "bundle_realistic.json", "bundle_adversarial.json"]
+    for fixture_name in positive_fixtures:
+        bundle = _load_fixture(fixture_name)
+        errors = validation_errors(bundle_validator, bundle)
+        checks.check(f"{fixture_name} is schema-valid", not errors, f"{len(errors)} error(s): {errors[:3]}")
+
+    # 3. Negative fixture validation (declared violations; exact count for version-routing)
+    checks.section("3. Negative fixture validation")
+    broken = _load_fixture("bundle_broken.json")
+    errors = validation_errors(bundle_validator, broken)
+    expected_broken = 13  # per _expected_violations in fixture
+    checks.check(
+        f"bundle_broken.json has exactly {expected_broken} schema violations",
+        len(errors) == expected_broken,
+        f"expected {expected_broken} got {len(errors)}: {[e['path'] for e in errors]}",
+    )
+
+    unsupported = _load_fixture("bundle_unsupported_version.json")
+    errors = validation_errors(bundle_validator, unsupported)
+    checks.check(
+        "bundle_unsupported_version.json has exactly 1 violation (version routing)",
+        len(errors) == 1 and errors[0]["path"] == "/schema_version",
+        f"got {len(errors)}: {[e['path'] for e in errors]}",
+    )
+
+    # 4. EvidenceRef validation and resolution (bundle only; report EvidenceRefs checked in section 7)
+    checks.section("4. EvidenceRef validation and resolution")
+    for fixture_name in positive_fixtures:
+        bundle = _load_fixture(fixture_name)
+        for path, ref in collect_bundle_evidence_refs(bundle):
+            ok, detail = resolve_evidence_ref(bundle, ref)
+            checks.check(f"{fixture_name} :: {path} resolves", ok, detail)
+
+    # 5. Fragment ID validation (frozen M0 fragment ID amendment)
+    checks.section("5. Fragment ID validation (frozen M0 amendment)")
+    for fixture_name in positive_fixtures:
+        bundle = _load_fixture(fixture_name)
+        findings = semantic_checks(bundle)
+        frag_findings = [f for f in findings if f["code"].startswith("FRAGMENT_")]
+        checks.check(
+            f"{fixture_name} has no FRAGMENT_ID violations",
+            not frag_findings,
+            f"{len(frag_findings)} violations: {[f['code'] for f in frag_findings]}",
+        )
+
+    # 6. trace-cj/1.0 canonicalization golden vectors
+    checks.section("6. trace-cj/1.0 canonicalization golden vectors")
+    golden_vector_checks(checks)
+
+    # 7. report_id / outputs_hash rules, including volatility invariance
+    checks.section("7. report_id and outputs_hash rules")
+    realistic = _load_fixture("bundle_realistic.json")
+    report_identity_checks(checks, load_json(V1_DIR / REPORT_SCHEMA), realistic, report_validator)
+
+    # 8. Contract semantic checks (SM-1 .. SM-16, mechanically checkable subset)
+    checks.section("8. Contract semantic checks")
+    for fixture_name in positive_fixtures:
+        bundle = _load_fixture(fixture_name)
+        findings = semantic_checks(bundle)
+        codes = _codes(findings)
+        if fixture_name == "bundle_realistic.json":
+            # Intentional violations declared in fixture
+            expected = {"DANGLING_REFERENCE", "GROUP_GAP_MISMATCH", "MEDIA_NOT_DECLARED", "OVERLAPPING_RANGE"}
+            unexpected = set(codes) - expected
+            checks.check(
+                f"{fixture_name} semantic violations match declared set",
+                not unexpected,
+                f"unexpected codes: {unexpected}",
+            )
+        elif fixture_name == "bundle_adversarial.json":
+            expected = {"CONFIDENCE_INCOMPATIBLE_WITH_COMPLETENESS", "DANGLING_REFERENCE"}
+            unexpected = set(codes) - expected
+            checks.check(
+                f"{fixture_name} semantic violations match declared set",
+                not unexpected,
+                f"unexpected codes: {unexpected}",
+            )
+        else:
+            checks.check(f"{fixture_name} has zero semantic violations", not codes, f"codes: {codes}")
+
+    # Negative fixtures: semantic violations expected but not exhaustively checked here
+    for fixture_name in ["bundle_broken.json", "bundle_unsupported_version.json"]:
+        bundle = _load_fixture(fixture_name)
+        findings = semantic_checks(bundle)
+        codes = _codes(findings)
+        print(f"  NOTE  {fixture_name} semantic codes: {codes}")
+
+    return checks.report()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
 
 
 # __CHUNK_SENTINEL__

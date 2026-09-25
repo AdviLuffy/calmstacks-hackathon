@@ -22,7 +22,7 @@
         "Establish an activity timeline for 2026-03-14",
         "Identify documents and communications relevant to the stated period"
       ],
-      "focus_categories": ["documents", "communications", "databases", "logs", "media"],
+      "focus_categories": ["document", "text", "database", "log", "image"],
       "excluded_families": ["executable"],
       "critical_window": {
         "from_utc": "2026-03-13T22:00:00Z",
@@ -197,7 +197,7 @@
       "signature": {
         "matched": true,
         "signature_id": "pdf_header",
-        "header_hex_first16": "255044462d312e370a25e2e3cfd",
+        "header_hex_first16": "255044462d312e37",
         "footer_hex_last4": "0a2525454f46",
         "footer_matched": true
       },
@@ -529,7 +529,7 @@
       "location": "unallocated",
       "signature_probe": { "matched": false, "marker_id": null, "offset_in_fragment": 0 },
       "entropy": { "shannon_bits_per_byte": 6.02 },
-      "type_likelihoods": { "database": 0.35, "unknown": 0.65 },
+      "type_likelihoods": { "sqlite3": 0.35, "unknown": 0.65 },
       "anomalies": [
         {
           "code": "OVERLAPPING_RANGE",
