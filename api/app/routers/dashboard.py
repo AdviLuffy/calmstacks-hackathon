@@ -53,6 +53,7 @@ EVIDENCE_DIR = REPO_ROOT / "evidence" / "datasets" / "evidence"
 # In-memory store for reconstructed PDF bytes by session_id
 _RECONSTRUCTED_FILES: dict[str, bytes] = {}
 _RECONSTRUCTED_META: dict[str, dict[str, Any]] = {}
+_RECONSTRUCTED_MEDIA: dict[str, bytes] = {}
 
 
 @router.get("/fixtures", summary="List available synthetic test fixtures")
@@ -96,6 +97,17 @@ def list_fixtures() -> dict[str, Any]:
             "description": "Deterministic 2560-byte raw disk image containing 10 shuffled fragments of a synthetic PDF with visible text: 'TRACE FORENSIC RECONSTRUCTION TEST'. Ground truth: visible_text.pdf",
             "is_synthetic": True,
             "label": "VISIBLE-CONTENT TEST FIXTURE",
+            "ready_to_carve": True,
+        },
+        {
+            "fixture_id": "visible_text_4missing",
+            "name": "Damaged Synthetic Reference — 4 Fragments Missing (blob_visible_text_4missing.bin)",
+            "type": "raw_media",
+            "size_bytes": 1536,
+            "fragments_count": 6,
+            "description": "Deterministic 1536-byte raw disk image containing 6 blocks (Header + 5 Objects). 4 structural tail fragments (xref, trailer, startxref, EOF) are missing. Used for Synthetic Repair (Demo).",
+            "is_synthetic": True,
+            "label": "SYNTHETIC DAMAGED FIXTURE",
             "ready_to_carve": True,
         },
         {
@@ -228,6 +240,23 @@ async def carve_raw_evidence(
             raise HTTPException(status_code=404, detail="Missing fragments fixture blob_visible_text_missing.bin not found on disk")
         media_path = blob_path
         media_bytes = blob_path.read_bytes()
+    elif fixture_id == "visible_text_4missing":
+        # 4 fragments missing synthetic test fixture (xref, trailer, startxref, eof)
+        blob_path = EVIDENCE_DIR / "blob_visible_text_4missing.bin"
+        if not blob_path.is_file():
+            alt = REPO_ROOT / "evidence" / "datasets" / "evidence" / "blob_visible_text_4missing.bin"
+            blob_path = alt if alt.is_file() else blob_path
+        if not blob_path.is_file():
+            try:
+                from trace_evidence.dataset import write_visible_4missing_dataset
+                write_visible_4missing_dataset(REPO_ROOT / "evidence" / "datasets")
+                blob_path = REPO_ROOT / "evidence" / "datasets" / "evidence" / "blob_visible_text_4missing.bin"
+            except Exception:
+                pass
+        if not blob_path.is_file():
+            raise HTTPException(status_code=404, detail="Damaged fixture blob_visible_text_4missing.bin not found on disk")
+        media_path = blob_path
+        media_bytes = blob_path.read_bytes()
     elif file is not None:
         media_bytes = await file.read()
         if not media_bytes:
@@ -310,7 +339,7 @@ async def carve_raw_evidence(
         gt_path = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "blob_1337.pdf"
         if gt_path.is_file():
             fixture_gt_bytes = gt_path.read_bytes()
-    elif fixture_id in ("visible_text_blob", "visible_text_missing"):
+    elif fixture_id in ("visible_text_blob", "visible_text_missing", "visible_text_4missing"):
         gt_path = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "visible_text.pdf"
         if not gt_path.is_file():
             alt = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "blob_visible_text.pdf"
@@ -349,6 +378,7 @@ async def carve_raw_evidence(
         # Store reconstructed PDF bytes and metadata for later inspection/download
         raw_pdf_bytes = pipeline_result.reconstruction.raw_bytes
         _RECONSTRUCTED_FILES[record.session_id] = raw_pdf_bytes
+        _RECONSTRUCTED_MEDIA[record.session_id] = media_bytes
 
         # Persist reconstructed bytes to session directory
         try:
@@ -364,6 +394,7 @@ async def carve_raw_evidence(
             raw_bytes=raw_pdf_bytes,
             missing_elements=pipeline_result.integrity_report.missing_elements,
             original_bytes=None,
+            media_bytes=media_bytes,
         )
 
         if repair_res and repair_res.is_openable:
@@ -371,7 +402,7 @@ async def carve_raw_evidence(
             try:
                 disk_rep_pdf = settings.session_root / f"{record.session_id}_repaired.pdf"
                 disk_rep_pdf.write_bytes(repair_res.repaired_bytes)
-                if fixture_id == "visible_text_missing":
+                if fixture_id in ("visible_text_missing", "visible_text_4missing"):
                     perm_path = REPO_ROOT / "evidence" / "datasets" / "evidence" / "reconstructed_repaired_visible_text.pdf"
                     perm_path.parent.mkdir(parents=True, exist_ok=True)
                     perm_path.write_bytes(repair_res.repaired_bytes)
@@ -421,27 +452,31 @@ async def carve_raw_evidence(
             file.filename
             if file and file.filename
             else (
-                "blob_visible_text_missing.bin"
-                if fixture_id == "visible_text_missing"
+                "blob_visible_text_4missing.bin"
+                if fixture_id == "visible_text_4missing"
                 else (
-                    "judge_complete_shuffled.bin"
-                    if fixture_id == "judge_scenario_a"
+                    "blob_visible_text_missing.bin"
+                    if fixture_id == "visible_text_missing"
                     else (
-                        "judge_missing_fragment.bin"
-                        if fixture_id == "judge_scenario_b"
+                        "judge_complete_shuffled.bin"
+                        if fixture_id == "judge_scenario_a"
                         else (
-                            "judge_corrupted_fragment.bin"
-                            if fixture_id == "judge_scenario_c"
+                            "judge_missing_fragment.bin"
+                            if fixture_id == "judge_scenario_b"
                             else (
-                                "TRACE_Scrambled_Evidence.bin"
-                                if fixture_id == "scrambled_evidence_blob"
+                                "judge_corrupted_fragment.bin"
+                                if fixture_id == "judge_scenario_c"
                                 else (
-                                    "blob_visible_text.bin"
-                                    if fixture_id == "visible_text_blob"
+                                    "TRACE_Scrambled_Evidence.bin"
+                                    if fixture_id == "scrambled_evidence_blob"
                                     else (
-                                        "blob_1337.bin"
-                                        if fixture_id == "synthetic_blob"
-                                        else Path(media_path).name
+                                        "blob_visible_text.bin"
+                                        if fixture_id == "visible_text_blob"
+                                        else (
+                                            "blob_1337.bin"
+                                            if fixture_id == "synthetic_blob"
+                                            else Path(media_path).name
+                                        )
                                     )
                                 )
                             )
@@ -460,7 +495,7 @@ async def carve_raw_evidence(
         if is_complete and is_verified:
             honest_status = "ORIGINAL BYTES RECOVERED AND VERIFIED"
         elif repair_res and repair_res.is_openable and (not is_complete or len(pipeline_result.integrity_report.missing_elements) > 0):
-            honest_status = "SYNTHETIC REPAIR — GENERATED OR REPLACED CONTENT"
+            honest_status = "SYNTHETICALLY REPAIRED — NOT BYTE-IDENTICAL TO ORIGINAL"
         elif pipeline_result.recovery_state == "CORRUPTED" or (pipeline_result.reconstruction.validation and not pipeline_result.reconstruction.validation.is_valid and is_complete):
             honest_status = "INVALID — OUTPUT FAILED PDF VALIDATION"
         else:
@@ -486,6 +521,7 @@ async def carve_raw_evidence(
             "synthesized_bytes_count": repair_res.synthesized_bytes_count if repair_res else 0,
             "synthesized_elements": list(repair_res.synthesized_elements) if repair_res else [],
             "repair_provenance": list(repair_res.provenance) if repair_res else [],
+            "repair_action_url": f"/api/sessions/{record.session_id}/repair",
             "repaired_download_url": f"/api/sessions/{record.session_id}/reconstruction/download?mode=repaired",
             "raw_download_url": f"/api/sessions/{record.session_id}/reconstruction/download?mode=raw",
             "missing_elements": list(pipeline_result.integrity_report.missing_elements),
@@ -764,7 +800,7 @@ def download_reconstructed_file(
     from starlette.responses import Response
 
     filename = f"repaired_{session_id}.pdf" if is_repaired else f"reconstructed_{session_id}.pdf"
-    repair_header = "SYNTHETIC REPAIR - GENERATED OR REPLACED CONTENT" if is_repaired else "ORIGINAL BYTES RECOVERED"
+    repair_header = "SYNTHETICALLY REPAIRED - NOT BYTE-IDENTICAL TO ORIGINAL" if is_repaired else "ORIGINAL BYTES RECOVERED"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -790,7 +826,7 @@ def view_reconstructed_file(
     from starlette.responses import Response
 
     filename = f"repaired_{session_id}.pdf" if is_repaired else f"reconstructed_{session_id}.pdf"
-    repair_header = "SYNTHETIC REPAIR - GENERATED OR REPLACED CONTENT" if is_repaired else "ORIGINAL BYTES RECOVERED"
+    repair_header = "SYNTHETICALLY REPAIRED - NOT BYTE-IDENTICAL TO ORIGINAL" if is_repaired else "ORIGINAL BYTES RECOVERED"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -799,6 +835,72 @@ def view_reconstructed_file(
             "X-TRACE-Repair-Status": repair_header,
         },
     )
+
+
+@router.post(
+    "/sessions/{session_id}/repair",
+    summary="Execute Synthetic PDF Repair (Demo) on damaged evidence media",
+)
+def run_synthetic_repair_action(
+    session_id: str,
+    pipeline: PipelineDep,
+    settings: SettingsDep,
+) -> dict[str, Any]:
+    """Execute PDF-aware synthetic repair, rebuilding xref, trailer, startxref, and EOF."""
+    record = pipeline.get(session_id)
+    if record is None:
+        raise SessionNotFoundError(f"no session with id {session_id!r}")
+
+    from trace_evidence.repair import repair_pdf
+
+    meta = _RECONSTRUCTED_META.get(session_id, {})
+    raw_pdf_bytes = _RECONSTRUCTED_FILES.get(session_id) or b""
+    if not raw_pdf_bytes:
+        disk_pdf = settings.session_root / f"{session_id}.pdf"
+        if disk_pdf.is_file():
+            raw_pdf_bytes = disk_pdf.read_bytes()
+
+    media_bytes = _RECONSTRUCTED_MEDIA.get(session_id)
+    missing_elements = meta.get("missing_elements", [])
+
+    repair_res = repair_pdf(
+        raw_bytes=raw_pdf_bytes,
+        missing_elements=missing_elements,
+        media_bytes=media_bytes,
+    )
+
+    if repair_res and repair_res.is_openable:
+        _RECONSTRUCTED_FILES[f"{session_id}_repaired"] = repair_res.repaired_bytes
+        try:
+            settings.session_root.mkdir(parents=True, exist_ok=True)
+            disk_rep = settings.session_root / f"{session_id}_repaired.pdf"
+            disk_rep.write_bytes(repair_res.repaired_bytes)
+        except Exception:
+            pass
+
+        meta.update({
+            "recovery_state": repair_res.repair_status,
+            "honest_status": repair_res.repair_status,
+            "repair_status": repair_res.repair_status,
+            "has_repaired_file": True,
+            "repaired_pdf_size": repair_res.repaired_size_bytes,
+            "repaired_sha256": repair_res.sha256,
+            "repaired_is_openable": repair_res.is_openable,
+            "repaired_page_count": repair_res.page_count,
+            "repaired_extracted_text": repair_res.extracted_text,
+            "synthesized_bytes_count": repair_res.synthesized_bytes_count,
+            "synthesized_elements": list(repair_res.synthesized_elements),
+            "repair_provenance": list(repair_res.provenance),
+            "repaired_download_url": f"/api/sessions/{session_id}/reconstruction/download?mode=repaired",
+            "raw_download_url": f"/api/sessions/{session_id}/reconstruction/download?mode=raw",
+        })
+        _RECONSTRUCTED_META[session_id] = meta
+
+    return {
+        "session_id": session_id,
+        "repair_result": repair_res.to_dict() if repair_res else None,
+        "metadata": meta,
+    }
 
 
 @router.get("/ai/status", summary="Get Gemini AI service configuration and status")

@@ -81,7 +81,7 @@ def test_synthetic_repair_produces_openable_pdf():
     rep = synthetic_repair_pdf(raw_bytes, missing)
 
     # 1. Honest forensic status
-    assert rep.repair_status == c.STATUS_SYNTHETIC_REPAIR
+    assert rep.repair_status == c.STATUS_SYNTHETICALLY_REPAIRED
     assert rep.is_byte_identical_to_groundtruth is False
     assert rep.recovered_size_bytes == 2048
     assert rep.repaired_size_bytes > 0
@@ -155,3 +155,75 @@ def test_provenance_and_immutability():
     assert prov[0]["byte_count"] > 0
     assert prov[1]["type"] == "synthesized_repair"
     assert prov[1]["byte_count"] > 0
+
+
+def test_missing_4fragments_damaged_evidence_repair():
+    """Damaged evidence with 4 missing tail fragments (xref, trailer, startxref, EOF).
+    
+    1. P1 deterministic reconstruction places 2 of 6 fragments (33% coverage)
+       due to object sequence gap, refusing to fabricate missing blocks.
+    2. Synthetic repair harvests unplaced fragments from raw media, rebuilds xref/trailer/startxref/EOF.
+    3. Repaired PDF opens in pypdf and fitz, rendering VISIBLE_TEXT_CONTENT.
+    4. Truthfully reports STATUS_SYNTHETICALLY_REPAIRED and not byte-identical to original.
+    """
+    from trace_evidence.dataset import write_visible_4missing_dataset
+    write_visible_4missing_dataset(DATASETS_DIR)
+    damaged_blob_path = DATASETS_DIR / "evidence" / "blob_visible_text_4missing.bin"
+    assert damaged_blob_path.is_file()
+
+    media_bytes = damaged_blob_path.read_bytes()
+    assert len(media_bytes) == 6 * c.BLOCK_SIZE == 1536
+
+    # 1. Deterministic P1 reconstruction on damaged 6-block fixture (Header + Objects 1-5, missing 4 tail fragments)
+    res = run_pipeline(damaged_blob_path)
+    assert res.is_complete is False
+    assert res.reconstruction.complete is False
+    assert res.integrity_report.is_verified is False
+    assert res.integrity_report.status == c.STATUS_INCOMPLETE
+    assert len(res.reconstruction.fragment_order) == 6
+    assert any("xref" in m for m in res.integrity_report.missing_elements)
+    assert any("trailer" in m for m in res.integrity_report.missing_elements)
+    assert any("startxref" in m for m in res.integrity_report.missing_elements)
+    assert any("EOF" in m or "eof" in m for m in res.integrity_report.missing_elements)
+
+    # 2. Synthetic PDF repair using recovered media (NO ground truth used)
+    raw_bytes = res.reconstruction.raw_bytes
+    missing = res.integrity_report.missing_elements
+    repair_res = synthetic_repair_pdf(
+        raw_bytes=raw_bytes,
+        missing_elements=missing,
+        media_bytes=media_bytes,
+    )
+
+    # 3. Honest status and non-authenticity of synthetic syntax
+    assert repair_res.repair_status == c.STATUS_SYNTHETICALLY_REPAIRED
+    assert repair_res.is_byte_identical_to_groundtruth is False
+    assert repair_res.is_openable is True
+    assert repair_res.page_count == 1
+    assert VISIBLE_TEXT_CONTENT in repair_res.extracted_text
+
+    # 4. Also test when P1 only places 2 of 6 fragments (e.g. 33% coverage due to gap or ordering):
+    # synthetic_repair_pdf must harvest unplaced blocks from media_bytes to build openable PDF
+    partial_raw_2frags = raw_bytes[:512]  # only 2 fragments placed
+    repair_res_2placed = synthetic_repair_pdf(
+        raw_bytes=partial_raw_2frags,
+        missing_elements=missing,
+        media_bytes=media_bytes,
+    )
+    assert repair_res_2placed.is_openable is True
+    assert repair_res_2placed.page_count == 1
+    assert VISIBLE_TEXT_CONTENT in repair_res_2placed.extracted_text
+    assert repair_res_2placed.repair_status == c.STATUS_SYNTHETICALLY_REPAIRED
+
+    # 5. Strict reader rendering
+    import fitz
+    import pypdf
+    reader = pypdf.PdfReader(io.BytesIO(repair_res.repaired_bytes))
+    assert len(reader.pages) == 1
+    assert VISIBLE_TEXT_CONTENT in reader.pages[0].extract_text()
+
+    doc = fitz.open(stream=repair_res.repaired_bytes, filetype="pdf")
+    assert doc.page_count == 1
+    pix = doc.load_page(0).get_pixmap()
+    assert pix.width > 0 and pix.height > 0
+    doc.close()

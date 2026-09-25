@@ -284,7 +284,7 @@ def test_missing_fragments_and_synthetic_repair_download(integrated_client):
     assert meta["session_id"] == session_id
     assert meta["complete"] is False
     assert meta["is_verified"] is False
-    assert meta["recovery_state"] == "SYNTHETIC REPAIR — GENERATED OR REPLACED CONTENT"
+    assert meta["recovery_state"] == "SYNTHETICALLY REPAIRED — NOT BYTE-IDENTICAL TO ORIGINAL"
     assert meta["has_repaired_file"] is True
     assert meta["repaired_is_openable"] is True
     assert meta["repaired_page_count"] == 1
@@ -295,7 +295,7 @@ def test_missing_fragments_and_synthetic_repair_download(integrated_client):
     assert r_dl_rep.status_code == 200
     assert r_dl_rep.headers["content-type"] == "application/pdf"
     assert "repaired" in r_dl_rep.headers["content-disposition"]
-    assert "SYNTHETIC REPAIR" in r_dl_rep.headers["X-TRACE-Repair-Status"]
+    assert "SYNTHETIC" in r_dl_rep.headers["X-TRACE-Repair-Status"]
 
     rep_bytes = r_dl_rep.content
     assert len(rep_bytes) > 0
@@ -308,4 +308,61 @@ def test_missing_fragments_and_synthetic_repair_download(integrated_client):
     r_dl_raw = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download?mode=raw")
     assert r_dl_raw.status_code == 200
     assert len(r_dl_raw.content) == 2048
+
+
+def test_4missing_fixture_and_repair_action(integrated_client):
+    """Verify carving visible_text_4missing and executing POST /repair endpoint."""
+    import io
+    import pypdf
+
+    # 1. Carve 4-missing damaged fixture
+    r_carve = integrated_client.post(
+        "/api/sessions/carve",
+        data={"fixture_id": "visible_text_4missing", "case_id": "CASE-4MISSING"},
+    )
+    assert r_carve.status_code == 201
+    session_id = r_carve.json()["session_id"]
+
+    # 2. Check metadata: not marked as complete or verified
+    r_meta = integrated_client.get(f"/api/sessions/{session_id}/reconstruction")
+    assert r_meta.status_code == 200
+    meta = r_meta.json()
+    assert meta["complete"] is False
+    assert meta["is_verified"] is False
+    assert "SYNTHETIC" in meta["recovery_state"]
+    assert meta["has_repaired_file"] is True
+    assert meta["repaired_is_openable"] is True
+    assert meta["repaired_page_count"] == 1
+    assert "TRACE FORENSIC RECONSTRUCTION TEST" in meta["repaired_extracted_text"]
+
+    # 3. Explicitly execute the Synthetic Repair (Demo) action endpoint
+    r_repair = integrated_client.post(f"/api/sessions/{session_id}/repair")
+    assert r_repair.status_code == 200
+    repair_data = r_repair.json()
+    assert repair_data["session_id"] == session_id
+    res = repair_data["repair_result"]
+    assert res["is_openable"] is True
+    assert res["page_count"] == 1
+    assert "TRACE FORENSIC RECONSTRUCTION TEST" in res["extracted_text"]
+    assert res["repair_status"] == "SYNTHETICALLY REPAIRED — NOT BYTE-IDENTICAL TO ORIGINAL"
+    assert res["is_byte_identical_to_groundtruth"] is False
+
+    # 4. Download repaired PDF and check header
+    r_dl = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download?mode=repaired")
+    assert r_dl.status_code == 200
+    assert "SYNTHETICALLY REPAIRED" in r_dl.headers["X-TRACE-Repair-Status"]
+    assert "NOT BYTE-IDENTICAL TO ORIGINAL" in r_dl.headers["X-TRACE-Repair-Status"]
+    rep_pdf = r_dl.content
+    reader = pypdf.PdfReader(io.BytesIO(rep_pdf))
+    assert len(reader.pages) == 1
+    assert "TRACE FORENSIC RECONSTRUCTION TEST" in reader.pages[0].extract_text()
+
+    # 5. Check investigation overview HTML does not show misleading COMPLETE badge
+    r_page = integrated_client.get(f"/investigations/{session_id}")
+    assert r_page.status_code == 200
+    page_html = r_page.text
+    assert "SYNTHETIC REPAIR (DEMO)" in page_html
+    # Case badges separate PIPELINE from RECOVERY
+    assert "PIPELINE: PROCESSED" in page_html
+
 

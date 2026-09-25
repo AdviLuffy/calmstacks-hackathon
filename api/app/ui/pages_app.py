@@ -29,8 +29,11 @@ def investigations_list_page() -> str:
       <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 1rem;">
         Launch an authentic end-to-end carving or contract validation pipeline in one click using verified repository fixtures.
       </p>
-        <button onclick="launchFixture('visible_text_missing')" class="btn btn-primary btn-sm" id="btn-fix-missing-repair" style="background: rgba(168, 85, 247, 0.2); border-color: rgba(168, 85, 247, 0.6); color: #e9d5ff;">
-          [SYNTHETIC REPAIR] Missing Fragment &rarr; Openable PDF (8 frags)
+        <button onclick="launchFixture('visible_text_4missing')" class="btn btn-primary btn-sm" id="btn-fix-4missing-repair" style="background: rgba(168, 85, 247, 0.2); border-color: rgba(168, 85, 247, 0.6); color: #e9d5ff;">
+          [SYNTHETIC REPAIR (DEMO)] Damaged Reference (4 Missing Frags: xref, trailer, startxref, EOF)
+        </button>
+        <button onclick="launchFixture('visible_text_missing')" class="btn btn-secondary btn-sm" id="btn-fix-missing-repair">
+          [SYNTHETIC REPAIR] Missing Startxref &bull; 8 frags
         </button>
         <button onclick="launchFixture('judge_scenario_a')" class="btn btn-secondary btn-sm" id="btn-fix-judge-a">
           [JUDGE A] Complete (10 frags &bull; 100% Verified)
@@ -114,9 +117,14 @@ def investigations_list_page() -> str:
         const recTag = rec ? (rec.status === 'ok' ? '<span class="tag tag-green">OK</span>' : '<span class="tag tag-red">FAILED</span>') : '<span class="tag">-</span>';
         const intelTag = intel ? (intel.status === 'ok' ? '<span class="tag tag-cyan">OK</span>' : '<span class="tag tag-amber">DEGRADED</span>') : '<span class="tag">-</span>';
 
-        const statusTag = s.status === 'complete'
-          ? '<span class="tag tag-green">COMPLETE</span>'
-          : (s.status === 'partial' ? '<span class="tag tag-amber">PARTIAL</span>' : '<span class="tag tag-red">' + (s.status || 'ACTIVE') + '</span>');
+        const ext = rec?.data?.extensions || {};
+        const isVerified = ext.is_verified === true && ext.reconstruction_complete === true;
+        const isPartial = ext.reconstruction_status === 'incomplete' || (ext.recovery_state && ext.recovery_state.includes('PARTIAL'));
+        const statusTag = isVerified
+          ? '<span class="tag tag-green">COMPLETE &amp; VERIFIED</span>'
+          : (isPartial
+            ? '<span class="tag tag-amber">PARTIAL RECOVERY</span>'
+            : (s.status === 'complete' ? '<span class="tag tag-muted">PROCESSED</span>' : '<span class="tag tag-red">' + (s.status || 'ACTIVE') + '</span>'));
 
         const createdStr = s.created_utc ? s.created_utc.substring(0, 19).replace('T', ' ') + 'Z' : '-';
 
@@ -251,6 +259,7 @@ def new_analysis_page() -> str:
         <div id="synthetic-section">
           <label class="form-label" for="fixture_id">Select Test Fixture</label>
           <select id="fixture_id" name="fixture_id" class="form-select">
+            <option value="visible_text_4missing">Damaged Synthetic Reference — 4 Fragments Missing (xref, trailer, startxref, EOF) (blob_visible_text_4missing.bin &bull; 1,536 B &bull; 6 frags &bull; Synthetic Repair Demo)</option>
             <option value="visible_text_missing">Missing Fragments Synthetic Test (blob_visible_text_missing.bin &bull; 2,048 B &bull; 8 frags &bull; Synthetic Repair Demo)</option>
             <option value="judge_scenario_a">Judge Scenario A: Complete Shuffled Recovery (judge_complete_shuffled.bin &bull; 2,560 B &bull; 10 frags &bull; COMPLETE AND VERIFIED)</option>
             <option value="judge_scenario_b">Judge Scenario B: Missing Fragment Partial Recovery (judge_missing_fragment.bin &bull; 2,048 B &bull; 8 frags &bull; PARTIAL)</option>
@@ -455,7 +464,8 @@ __SUBNAV__
         </div>
 
         <div style="display: flex; gap: 0.5rem; align-items: center;" id="status-badges">
-          <span class="tag" id="status-tag">LOADING</span>
+          <span class="tag tag-muted" id="pipeline-status-tag">PIPELINE: PROCESSED</span>
+          <span class="tag" id="status-tag">RECOVERY: EVALUATING</span>
           <span class="tag" id="wb-tag">WRITE-BLOCK: &hellip;</span>
         </div>
       </div>
@@ -647,11 +657,24 @@ __SUBNAV__
         if (origSizeEl) origSizeEl.textContent = `${Number(session.evidence_bytes).toLocaleString()} bytes`;
       }
 
+      const pipeTag = document.getElementById('pipeline-status-tag');
+      if (pipeTag) {
+        if (session.status === 'complete') {
+          pipeTag.textContent = 'PIPELINE: PROCESSED';
+          pipeTag.className = 'tag tag-muted';
+        } else if (session.status === 'failed') {
+          pipeTag.textContent = 'PIPELINE: FAILED';
+          pipeTag.className = 'tag tag-red';
+        } else {
+          pipeTag.textContent = 'PIPELINE: ' + (session.status || 'ACTIVE').toUpperCase();
+          pipeTag.className = 'tag tag-amber';
+        }
+      }
+
       const sTag = document.getElementById('status-tag');
       if (sTag) {
-        const st = (session.status || 'ACTIVE').toUpperCase();
-        sTag.textContent = st;
-        sTag.className = 'tag ' + (session.status === 'complete' ? 'tag-green' : (session.status === 'failed' ? 'tag-red' : 'tag-amber'));
+        sTag.textContent = 'RECOVERY: EVALUATING...';
+        sTag.className = 'tag tag-amber';
       }
     } catch (err) {
       console.error('Session detail error:', err);
@@ -895,53 +918,122 @@ __SUBNAV__
           }
         }
 
+        const topCaseTag = document.getElementById('status-tag');
+        if (topCaseTag) {
+          if (recon.is_intact_passthrough) {
+            topCaseTag.textContent = 'INTACT VERIFIED';
+            topCaseTag.className = 'tag tag-green';
+            topCaseTag.style = '';
+          } else if (recon.complete && recon.is_verified) {
+            topCaseTag.textContent = 'RECOVERY: 100% VERIFIED';
+            topCaseTag.className = 'tag tag-green';
+            topCaseTag.style = '';
+          } else if (recon.has_repaired_file && recon.repaired_is_openable) {
+            topCaseTag.textContent = 'SYNTHETIC REPAIR (DEMO)';
+            topCaseTag.className = 'tag';
+            topCaseTag.style.background = 'rgba(168, 85, 247, 0.2)';
+            topCaseTag.style.color = '#e9d5ff';
+            topCaseTag.style.border = '1px solid rgba(168, 85, 247, 0.5)';
+          } else if (recon.status === 'incomplete' || (recon.recovery_state && recon.recovery_state.includes('PARTIAL')) || (recon.unplaced_fragments_count > 0)) {
+            const unplaced = recon.unplaced_fragments_count || 0;
+            topCaseTag.textContent = unplaced > 0 ? `PARTIAL RECOVERY (${unplaced} UNPLACED)` : 'PARTIAL RECOVERY';
+            topCaseTag.className = 'tag tag-amber';
+            topCaseTag.style = '';
+          } else if (recon.status === 'corrupted' || (recon.recovery_state && recon.recovery_state.includes('CORRUPTED'))) {
+            topCaseTag.textContent = 'RECOVERY: CORRUPTED';
+            topCaseTag.className = 'tag tag-red';
+            topCaseTag.style = '';
+          } else {
+            topCaseTag.textContent = 'RECOVERY: UNVERIFIED';
+            topCaseTag.className = 'tag tag-copper';
+            topCaseTag.style = '';
+          }
+        }
+
         if (recon.recovery_state && stTag) {
           stTag.textContent = recon.recovery_state.toUpperCase();
           if (recon.recovery_state.includes('ORIGINAL BYTES RECOVERED AND VERIFIED') || recon.recovery_state === 'COMPLETE AND VERIFIED') {
             stTag.className = 'tag tag-green';
-          } else if (recon.recovery_state.includes('SYNTHETIC REPAIR')) {
+            stTag.style = '';
+          } else if (recon.recovery_state.includes('SYNTHETICALLY REPAIRED') || recon.recovery_state.includes('SYNTHETIC REPAIR')) {
             stTag.className = 'tag';
-            stTag.style.background = 'rgba(168, 85, 247, 0.18)';
+            stTag.style.background = 'rgba(168, 85, 247, 0.2)';
             stTag.style.color = '#e9d5ff';
             stTag.style.border = '1px solid rgba(168, 85, 247, 0.5)';
           } else if (recon.recovery_state.includes('PARTIAL')) {
             stTag.className = 'tag tag-amber';
+            stTag.style = '';
           } else if (recon.recovery_state.includes('INVALID') || recon.recovery_state === 'CORRUPTED') {
             stTag.className = 'tag tag-red';
+            stTag.style = '';
           } else {
             stTag.className = 'tag tag-copper';
+            stTag.style = '';
           }
         }
 
         // If synthetic repair produced an openable PDF, provide prominent access and honest provenance
         if (recon.has_repaired_file && !recon.complete) {
           if (dlBtn) {
-            dlBtn.innerHTML = '&darr; Download Repaired PDF (Openable)';
+            dlBtn.innerHTML = '&darr; Download Repaired PDF (Demo)';
             dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired`);
             dlBtn.className = 'btn btn-primary';
             dlBtn.style.opacity = '1';
             dlBtn.style.cursor = 'pointer';
+            dlBtn.style.background = '#9333ea';
+            dlBtn.style.borderColor = '#a855f7';
           }
           if (viewBtn) {
             viewBtn.style.display = 'inline-flex';
-            viewBtn.innerHTML = '&#128065; View Repaired PDF';
+            viewBtn.innerHTML = '&#128065; View Repaired PDF (Demo)';
             viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view?mode=repaired`);
           }
           if (specEl) {
             const txt = recon.repaired_extracted_text ? ` &bull; Verified Text: "${escapeHtml(recon.repaired_extracted_text)}"` : '';
             specEl.innerHTML = `
               <div style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 3px; padding: 0.85rem; margin-top: 0.5rem;">
-                <div style="font-weight: 700; color: #c084fc; font-family: var(--font-mono); margin-bottom: 0.35rem; font-size: 12.5px;">
-                  [SYNTHETIC REPAIR] OPENABLE PDF SYNTHESIZED (${recon.repaired_pdf_size || 'N/A'} bytes &bull; ${recon.repaired_page_count || 1} page${txt})
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; flex-wrap: wrap; gap: 0.5rem;">
+                  <span class="tag" style="background: rgba(168, 85, 247, 0.25); color: #f3e8ff; border: 1px solid rgba(168, 85, 247, 0.6); font-weight: 700;">
+                    SYNTHETIC REPAIR (DEMO)
+                  </span>
+                  <span style="font-family: var(--font-mono); font-size: 11px; color: #d8b4fe;">
+                    ${recon.repaired_pdf_size || 'N/A'} bytes &bull; ${recon.repaired_page_count || 1} page${txt}
+                  </span>
+                </div>
+                <div style="font-weight: 700; color: #f3e8ff; font-family: var(--font-mono); font-size: 12px; margin-bottom: 0.35rem;">
+                  SYNTHETICALLY REPAIRED — NOT BYTE-IDENTICAL TO ORIGINAL
                 </div>
                 <div style="font-size: 11.5px; color: var(--text-secondary); line-height: 1.5;">
-                  Original recovered objects preserved without alteration. Missing startxref pointer and %%EOF marker synthesized to make PDF openable in Adobe Acrobat and standard readers.<br>
-                  <span style="color: var(--text-muted); font-size: 11px;">[Forensic Ledger] Recovered evidence: ${recon.fragments_placed || 0} fragments (${recon.pdf_size_bytes} B) &bull; Synthesized syntax: ${recon.synthesized_bytes_count || 0} B &bull; Byte-identical to ground truth: FALSE.</span>
+                  Original recovered objects preserved without alteration. Rebuilt cross-reference table (xref), trailer dictionary, startxref pointer, and %%EOF terminator to allow document rendering in Adobe Acrobat and standard readers.<br>
+                  <span style="color: var(--text-muted); font-size: 11px;">[Forensic Ledger] Recovered evidence: ${recon.fragments_placed || 0} fragments (${recon.pdf_size_bytes} B) &bull; Synthesized syntax: ${recon.synthesized_bytes_count || 0} B &bull; Byte-identical to ground truth: FALSE &bull; Authenticity claimed: NONE for generated bytes.</span>
                 </div>
-                <div style="margin-top: 0.6rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                  <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 0.25rem 0.65rem;">&darr; Download Openable PDF</a>
-                  <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=raw" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 0.25rem 0.65rem;">&darr; Download Raw Partial Bytes (${recon.pdf_size_bytes} B)</a>
+                <div style="margin-top: 0.65rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                  <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 0.35rem 0.75rem; background: #9333ea; border-color: #a855f7;">&darr; Download Repaired PDF (Demo)</a>
+                  <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=raw" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 0.35rem 0.75rem;">&darr; Download Raw Partial Bytes (${recon.pdf_size_bytes} B)</a>
                 </div>
+              </div>
+            `;
+          }
+        } else if (!recon.complete && (!recon.has_repaired_file || !recon.repaired_is_openable)) {
+          if (specEl) {
+            let extraNotice = '';
+            if (recon.missing_elements && recon.missing_elements.length > 0) {
+              extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-amber);"><strong>Missing Structural Elements:</strong> ${recon.missing_elements.map(e => `&bull; ${escapeHtml(e)}`).join(' ')}</div>`;
+            }
+            const unplaced = recon.unplaced_fragments_count || 0;
+            specEl.innerHTML = `
+              <div style="margin-bottom: 0.5rem;">
+                <span style="color: var(--accent-amber);"><strong>RECONSTRUCTION PARTIAL:</strong> ${unplaced} fragment(s) unplaced. Missing structural trailer/pointers prevent opening.</span>
+                ${extraNotice}
+              </div>
+              <div style="background: rgba(168, 85, 247, 0.08); border: 1px dashed rgba(168, 85, 247, 0.4); border-radius: 3px; padding: 0.75rem; margin-top: 0.5rem;">
+                <div style="font-size: 12px; color: #e9d5ff; margin-bottom: 0.4rem;">
+                  <strong>Synthetic Repair (Demo) Action Available:</strong><br>
+                  Repair the PDF structure using PDF parser reconstruction to rebuild the cross-reference table, trailer, startxref, and EOF.
+                </div>
+                <button type="button" onclick="triggerSyntheticRepair()" class="btn btn-primary btn-sm" id="btn-trigger-repair" style="font-size: 11.5px; padding: 0.35rem 0.85rem; background: #9333ea; border-color: #a855f7;">
+                  &#9874; Run Synthetic Repair (Demo)
+                </button>
               </div>
             `;
           }
@@ -1093,6 +1185,35 @@ __SUBNAV__
       if (aiTag) { aiTag.textContent = 'AI OFFLINE'; aiTag.className = 'tag tag-copper'; }
       if (aiCont) {
         aiCont.innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">AI analysis service unreachable.</p>';
+      }
+    }
+  async function triggerSyntheticRepair() {
+    const btn = document.getElementById('btn-trigger-repair');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '&#8987; Repairing PDF structure...';
+    }
+    try {
+      const res = await fetch(`/api/sessions/${SESSION_ID}/repair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert('Synthetic repair failed: ' + (err.detail || res.statusText));
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '&#9874; Retry Synthetic Repair (Demo)';
+        }
+        return;
+      }
+      await loadOverview();
+    } catch (e) {
+      console.error('Synthetic repair error:', e);
+      alert('Network error during repair: ' + e.message);
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '&#9874; Retry Synthetic Repair (Demo)';
       }
     }
   }
