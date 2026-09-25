@@ -1,0 +1,8 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Generated dataset and pipeline output - reproducible via tools/make_dataset.py
+datasets/

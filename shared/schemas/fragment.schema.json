@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:trace:evidence-fragment:1.0",
+  "title": "TRACE evidence fragment record (M0)",
+  "description": "One contiguous byte range of the source media. Frozen fragment ID contract: FRG-<16 lowercase hex>-<start>-<end>. Only contract-frozen field names appear here.",
+  "x-canonicalization": "trace-cj/1.0",
+  "type": "object",
+  "required": [
+    "fragment_id",
+    "byte_range",
+    "size_bytes",
+    "bytes_sha256",
+    "warnings"
+  ],
+  "properties": {
+    "fragment_id": {
+      "type": "string",
+      "pattern": "^FRG-[0-9a-f]{16}-[0-9]+-[0-9]+$",
+      "description": "FRG-<first 16 lowercase hex of bytes_sha256>-<start>-<end>. The source range is part of the ID, so identical bytes at different source ranges receive different fragment IDs."
+    },
+    "byte_range": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "description": "[start, end) byte offsets into the source media."
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "end - start. This is a FRAGMENT size, not media.size_bytes."
+    },
+    "bytes_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Authoritative content digest of the fragment bytes."
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Partial failures affecting this fragment. Never silently omitted."
+    }
+  }
+}
