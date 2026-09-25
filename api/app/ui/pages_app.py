@@ -260,8 +260,8 @@ def new_analysis_page() -> str:
         <!-- UPLOAD SECTION -->
         <div id="upload-section" style="display: none;">
           <label class="form-label" for="file_upload">Upload Media Bitstream</label>
-          <input type="file" id="file_upload" name="file" class="form-input" accept=".bin,.raw,.img,.dd,.json">
-          <div class="form-hint">Supported formats: Raw sector images (.bin, .raw, .img, .dd) or canonical JSON bundles (.json).</div>
+          <input type="file" id="file_upload" name="file" class="form-input" accept=".bin,.raw,.img,.dd,.json,.pdf">
+          <div class="form-hint">Supported formats: Raw sector images (.bin, .raw, .img, .dd), intact documents (.pdf), or canonical JSON bundles (.json).</div>
         </div>
       </div>
 
@@ -572,15 +572,33 @@ __SUBNAV__
       if (recRes.ok) {
         const recon = await recRes.json();
         document.getElementById('recon-sha256').textContent = recon.reconstructed_sha256 || 'N/A';
-        document.getElementById('recon-size').textContent = (recon.pdf_size_bytes || 2048) + ' bytes';
-        document.getElementById('recon-frags').textContent = (recon.fragments_carved || recon.fragments_placed || 8) + ' fragments';
+        document.getElementById('recon-size').textContent = (recon.pdf_size_bytes != null ? recon.pdf_size_bytes : 2048) + ' bytes';
+        document.getElementById('recon-frags').textContent = recon.is_intact_passthrough ? '0 (Intact Stream)' : ((recon.fragments_placed || 0) + ' / ' + (recon.fragments_carved || 0) + ' fragments');
         const stTag = document.getElementById('recon-status-tag');
-        stTag.textContent = (recon.status || 'complete').toUpperCase();
-        stTag.className = 'tag ' + (recon.complete ? 'tag-green' : 'tag-copper');
+
+        if (recon.is_intact_passthrough) {
+          stTag.textContent = 'INTACT VERIFIED';
+          stTag.className = 'tag tag-green';
+        } else if (recon.complete && recon.status === 'structurally_valid') {
+          stTag.textContent = 'RECONSTRUCTED';
+          stTag.className = 'tag tag-green';
+        } else if (recon.status === 'incomplete' || !recon.complete) {
+          const unplaced = recon.unplaced_fragments_count || 0;
+          stTag.textContent = `INCOMPLETE (${unplaced} UNPLACED)`;
+          stTag.className = 'tag tag-amber';
+        } else {
+          stTag.textContent = (recon.status || 'unknown').toUpperCase();
+          stTag.className = 'tag tag-copper';
+        }
 
         const specEl = document.getElementById('recon-spec-status');
         if (specEl) {
-          if (recon.pdf_structure) {
+          if (recon.is_intact_passthrough) {
+            specEl.innerHTML = `<strong>INTACT DOCUMENT STREAM:</strong> Complete, unfragmented PDF bitstream ingested directly. Exact source bytes preserved without synthetic or fragment assembly.`;
+          } else if (recon.status === 'incomplete' || !recon.complete) {
+            const unplaced = recon.unplaced_fragments_count || 0;
+            specEl.innerHTML = `<span style="color: var(--accent-amber);"><strong>RECONSTRUCTION INCOMPLETE:</strong> ${unplaced} fragment(s) remain unplaced. Structural DNA analysis halted due to unaligned PDF objects or broken sequence in raw media. Output is partial and unverified.</span>`;
+          } else if (recon.pdf_structure) {
             const ps = recon.pdf_structure;
             specEl.innerHTML = `<strong>${ps.specification_status}</strong> &bull; MediaBox: [${(ps.mediabox || [0,0,200,200]).join(' ')}] &bull; Objects: ${ps.object_count}`;
           } else {
@@ -837,11 +855,11 @@ __SUBNAV__
           <span id="prov-sha256" class="hash-cell" style="font-size: 13px; font-weight: 700;">Loading digest&hellip;</span>
         </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
-          <div class="env-indicator">
-            <span class="env-dot"></span>
-            <span>PROVENANCE: 100% COVERAGE</span>
+          <div class="env-indicator" id="prov-env-indicator">
+            <span class="env-dot" id="prov-env-dot"></span>
+            <span id="prov-coverage-text">PROVENANCE: 100% COVERAGE</span>
           </div>
-          <span class="tag tag-copper">CANDIDATE-ONLY JOINS</span>
+          <span class="tag tag-copper" id="prov-tag">CANDIDATE-ONLY JOINS</span>
         </div>
       </div>
     </div>
@@ -850,7 +868,7 @@ __SUBNAV__
     <div class="panel" style="padding: 0; overflow: hidden;">
       <div style="padding: 0.75rem 1.25rem; border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
         <span class="panel-title">Authentic Assembly Sequence &amp; Physical Mappings</span>
-        <span class="tag tag-green">ZERO INTERPOLATION</span>
+        <span class="tag tag-green" id="prov-sub-tag">ZERO INTERPOLATION</span>
       </div>
 
       <div class="table-container" style="margin-bottom: 0; border: none;">
@@ -885,32 +903,85 @@ __SUBNAV__
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
 
-      document.getElementById('prov-sha256').textContent = data.reconstructed_sha256 || '1ba5d499d667001095a9fefa4d57551538f742824bb2e2de1feae5e224d64caf';
+      const dot = document.getElementById('prov-env-dot');
+      const covText = document.getElementById('prov-coverage-text');
+      const tag = document.getElementById('prov-tag');
+      const subTag = document.getElementById('prov-sub-tag');
+      const hashEl = document.getElementById('prov-sha256');
+
+      if (data.is_intact_passthrough) {
+        hashEl.textContent = data.reconstructed_sha256 || 'N/A';
+        if (dot) dot.style.background = 'var(--accent-green)';
+        if (covText) covText.textContent = 'INTACT PASSTHROUGH: 100% ORIGINAL';
+        if (tag) {
+          tag.textContent = 'AUTHENTIC BITSTREAM (UNFRAGMENTED)';
+          tag.className = 'tag tag-green';
+        }
+        if (subTag) {
+          subTag.textContent = 'EXACT BITSTREAM PRESERVED';
+          subTag.className = 'tag tag-green';
+        }
+
+        tbody.innerHTML = `
+          <tr>
+            <td class="code-cell" style="color: var(--accent-copper); font-weight: 700;">[0..${data.pdf_size_bytes}]</td>
+            <td class="code-cell" style="color: var(--text-muted);">[0..${data.pdf_size_bytes}]</td>
+            <td class="code-cell" style="color: var(--accent-cyan);">INTACT-STREAM</td>
+            <td class="code-cell">${data.pdf_size_bytes} B</td>
+            <td><span class="tag tag-green" style="font-size: 9.5px;">Complete Bitstream (100% Intact)</span></td>
+            <td><span class="tag tag-green" style="font-size: 9.5px;">Authentic Byte Verified</span></td>
+          </tr>
+        `;
+        return;
+      }
+
+      if (data.status === 'incomplete' || !data.complete) {
+        hashEl.textContent = 'N/A (INCOMPLETE CARVE)';
+        if (dot) dot.style.background = 'var(--accent-amber)';
+        const unplaced = data.unplaced_fragments_count || 0;
+        if (covText) covText.textContent = `PARTIAL OUTPUT: ${unplaced} UNPLACED FRAGMENTS`;
+        if (tag) {
+          tag.textContent = 'INCOMPLETE (UNVERIFIED)';
+          tag.className = 'tag tag-amber';
+        }
+        if (subTag) {
+          subTag.textContent = 'PARTIAL / UNALIGNED INPUT';
+          subTag.className = 'tag tag-amber';
+        }
+        const provList = data.provenance || [];
+        if (provList.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--accent-amber); padding: 2rem;">Reconstruction incomplete: ${unplaced} fragment(s) remain unplaced. Structural sequence halted; no verified fragments assembled.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = provList.map(p => `
+          <tr>
+            <td class="code-cell" style="color: var(--accent-copper); font-weight: 700;">[${p.output_offset_start}..${p.output_offset_end}]</td>
+            <td class="code-cell" style="color: var(--text-muted);">[${p.media_offset_start}..${p.media_offset_end}]</td>
+            <td class="code-cell" style="color: var(--accent-cyan);">${p.fragment_id}</td>
+            <td class="code-cell">${p.byte_count} B</td>
+            <td><span class="tag tag-amber" style="font-size: 9.5px;">Partial (Incomplete Chain)</span></td>
+            <td><span class="tag tag-amber" style="font-size: 9.5px;">Unverified Output</span></td>
+          </tr>
+        `).join('');
+        return;
+      }
+
+      // Normal verified / complete reconstruction
+      hashEl.textContent = data.reconstructed_sha256 || 'N/A';
+      if (dot) dot.style.background = 'var(--accent-green)';
+      if (covText) covText.textContent = 'PROVENANCE: 100% COVERAGE';
+      if (tag) {
+        tag.textContent = 'CANDIDATE-ONLY JOINS';
+        tag.className = 'tag tag-copper';
+      }
+      if (subTag) {
+        subTag.textContent = 'ZERO INTERPOLATION';
+        subTag.className = 'tag tag-green';
+      }
 
       const provList = data.provenance || [];
       if (provList.length === 0) {
-        // Fallback realistic provenance ledger for 8 fragments
-        const syntheticItems = [
-          { out: '[0..255]', src: '[1024..1279]', id: 'FRAG-0001', bytes: 256 },
-          { out: '[256..511]', src: '[512..767]', id: 'FRAG-0002', bytes: 256 },
-          { out: '[512..767]', src: '[1792..2047]', id: 'FRAG-0003', bytes: 256 },
-          { out: '[768..1023]', src: '[0..255]', id: 'FRAG-0004', bytes: 256 },
-          { out: '[1024..1279]', src: '[1280..1535]', id: 'FRAG-0005', bytes: 256 },
-          { out: '[1280..1535]', src: '[256..511]', id: 'FRAG-0006', bytes: 256 },
-          { out: '[1536..1791]', src: '[1536..1791]', id: 'FRAG-0007', bytes: 256 },
-          { out: '[1792..2047]', src: '[768..1023]', id: 'FRAG-0008', bytes: 256 },
-        ];
-
-        tbody.innerHTML = syntheticItems.map(item => `
-          <tr>
-            <td class="code-cell" style="color: var(--accent-copper); font-weight: 700;">${item.out}</td>
-            <td class="code-cell" style="color: var(--text-muted);">${item.src}</td>
-            <td class="code-cell" style="color: var(--accent-cyan);">${item.id}</td>
-            <td class="code-cell">${item.bytes} B</td>
-            <td><span class="tag tag-amber" style="font-size: 9.5px;">Candidate Only (contiguity=False)</span></td>
-            <td><span class="tag tag-green" style="font-size: 9.5px;">Authentic Byte Verified</span></td>
-          </tr>
-        `).join('');
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">No fragment provenance records available for this session.</td></tr>';
         return;
       }
 

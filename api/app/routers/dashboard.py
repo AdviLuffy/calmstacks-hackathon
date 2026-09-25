@@ -16,6 +16,7 @@ from app.dependencies import PipelineDep, SettingsDep
 from app.errors import InvalidInputError, SessionNotFoundError
 from app.schemas.session import SessionDetail, project_session_detail
 from app.services.interfaces import SessionRecord
+from app.services.pdf_validator import build_intact_evidence_bundle, validate_intact_pdf
 from app.services.session_store import SessionPersistenceError
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -158,6 +159,54 @@ async def carve_raw_evidence(
         media_bytes = await file.read()
         if not media_bytes:
             raise InvalidInputError("uploaded evidence file is empty (0 bytes)")
+
+        # Fast intact-PDF check: if media is an intact valid PDF, bypass shuffled fragment carver
+        is_intact, intact_reason, intact_telemetry = validate_intact_pdf(media_bytes)
+        if is_intact:
+            filename = file.filename or "evidence.pdf"
+            bundle = build_intact_evidence_bundle(
+                media_bytes=media_bytes,
+                media_name=filename,
+                case_id=norm_case_id,
+                title=norm_title,
+                investigator=norm_investigator,
+                write_blocked=write_blocked,
+                acquisition_method=acquisition_method,
+            )
+            bundle_bytes = json.dumps(bundle, indent=2, sort_keys=True).encode("utf-8")
+            record = pipeline.submit(evidence=bundle_bytes, case_id=norm_case_id)
+
+            _RECONSTRUCTED_FILES[record.session_id] = media_bytes
+            try:
+                settings.session_root.mkdir(parents=True, exist_ok=True)
+                disk_pdf = settings.session_root / f"{record.session_id}.pdf"
+                disk_pdf.write_bytes(media_bytes)
+            except Exception:
+                pass
+
+            _RECONSTRUCTED_META[record.session_id] = {
+                "session_id": record.session_id,
+                "status": "intact_verified",
+                "complete": True,
+                "reconstructed_sha256": intact_telemetry["sha256"],
+                "is_verified": True,
+                "is_intact_passthrough": True,
+                "pdf_size_bytes": len(media_bytes),
+                "fragments_carved": 0,
+                "fragments_placed": 0,
+                "unplaced_fragments_count": 0,
+                "provenance": [],
+                "byte_coverage": "100%",
+                "media_source": filename,
+                "media_sha256": intact_telemetry["sha256"],
+                "pdf_structure": intact_telemetry,
+                "forensic_notice": (
+                    "Complete, unfragmented PDF bitstream ingested directly. "
+                    "Exact source bytes preserved. No block carving or fragment assembly claimed."
+                ),
+            }
+            return project_session_detail(record)
+
         temp_file = temp_dir / f"upload_{uuid.uuid4().hex[:8]}.bin"
         temp_file.write_bytes(media_bytes)
         media_path = temp_file
@@ -225,20 +274,40 @@ async def carve_raw_evidence(
 
         structure_info = inspect_pdf_structure(raw_pdf_bytes)
 
+        # Determine completeness and honesty
+        unplaced_count = max(0, len(pipeline_result.scan.fragments) - len(pipeline_result.reconstruction.fragment_order))
+        is_complete = bool(
+            pipeline_result.reconstruction.complete
+            and unplaced_count == 0
+            and pipeline_result.reconstruction.validation.is_valid
+        )
+        recon_status = "structurally_valid" if is_complete else "incomplete"
+        # Never mark incomplete or unplaced reconstruction as verified
+        is_verified = bool(pipeline_result.integrity_report.is_verified and is_complete)
+
         _RECONSTRUCTED_META[record.session_id] = {
             "session_id": record.session_id,
-            "status": pipeline_result.reconstruction.status,
-            "complete": pipeline_result.reconstruction.complete,
-            "reconstructed_sha256": pipeline_result.integrity_report.reconstructed_sha256,
-            "is_verified": pipeline_result.integrity_report.is_verified,
+            "status": recon_status,
+            "complete": is_complete,
+            "reconstructed_sha256": pipeline_result.integrity_report.reconstructed_sha256 if is_complete else None,
+            "is_verified": is_verified,
+            "is_intact_passthrough": False,
             "pdf_size_bytes": len(raw_pdf_bytes),
             "fragments_carved": len(pipeline_result.scan.fragments),
             "fragments_placed": len(pipeline_result.reconstruction.fragment_order),
+            "unplaced_fragments_count": unplaced_count,
             "provenance": provenance_list,
-            "byte_coverage": "100%",
+            "byte_coverage": "100%" if is_complete else f"{(len(pipeline_result.reconstruction.fragment_order)/max(1, len(pipeline_result.scan.fragments)))*100:.1f}%",
             "media_source": Path(media_path).name,
             "media_sha256": pipeline_result.scan.media_sha256,
             "pdf_structure": structure_info,
+            "reconstruction_errors": list(pipeline_result.reconstruction.validation.errors) if not is_complete else [],
+            "forensic_notice": (
+                "Deterministic structural DNA carving and graph assembly completed."
+                if is_complete
+                else f"Reconstruction incomplete: {unplaced_count} fragment(s) remain unplaced. "
+                     "Raw media does not meet 256-byte block alignment invariants or contains broken structural sequences."
+            ),
         }
 
         return project_session_detail(record)
@@ -365,18 +434,45 @@ def get_reconstruction_details(
 
     structure_info = inspect_pdf_structure(pdf_bytes) if pdf_bytes else None
 
+    is_intact = ext.get("input_mode") == "intact_stream_passthrough"
+    frag_count = len(bundle.get("fragments", []))
+    placed_count = len(rgroups[0].get("member_fragment_ids", [])) if rgroups else 0
+    unplaced_count = max(0, frag_count - placed_count) if not is_intact else 0
+
+    if is_intact:
+        status_val = "intact_verified"
+        is_complete = True
+        is_verified = True
+        byte_cov = "100%"
+        notice = "Complete, unfragmented PDF bitstream ingested directly. Exact source bytes preserved."
+    else:
+        is_complete = bool(ext.get("reconstruction_complete", False) and unplaced_count == 0)
+        status_val = "structurally_valid" if is_complete else "incomplete"
+        is_verified = bool(ext.get("is_verified", False) and is_complete)
+        byte_cov = "100%" if is_complete else (f"{(placed_count / max(1, frag_count)) * 100:.1f}%" if frag_count else "N/A")
+        notice = (
+            "Deterministic structural DNA carving and graph assembly completed."
+            if is_complete
+            else f"Reconstruction incomplete: {unplaced_count} fragment(s) remain unplaced. "
+                 "Raw media does not meet 256-byte block alignment invariants or contains broken structural sequences."
+        )
+
     return {
         "session_id": session_id,
-        "status": ext.get("reconstruction_status", "complete" if rgroups else "unknown"),
-        "complete": ext.get("reconstruction_complete", bool(rgroups)),
-        "reconstructed_sha256": ext.get("reconstructed_sha256"),
-        "is_verified": ext.get("is_verified", False),
+        "status": status_val,
+        "complete": is_complete,
+        "reconstructed_sha256": ext.get("reconstructed_sha256") if (is_intact or is_complete) else None,
+        "is_verified": is_verified,
+        "is_intact_passthrough": is_intact,
         "pdf_size_bytes": len(pdf_bytes) if pdf_bytes else None,
-        "fragments_carved": len(bundle.get("fragments", [])),
+        "fragments_carved": frag_count,
+        "fragments_placed": placed_count,
+        "unplaced_fragments_count": unplaced_count,
         "reconstruction_groups": rgroups,
         "has_reconstructed_file": pdf_bytes is not None,
-        "byte_coverage": "100%" if rgroups else "N/A",
+        "byte_coverage": byte_cov,
         "pdf_structure": structure_info,
+        "forensic_notice": notice,
     }
 
 
