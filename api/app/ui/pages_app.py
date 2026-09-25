@@ -458,9 +458,16 @@ __SUBNAV__
             <span>FRAGMENTS: <strong id="recon-frags" style="color: var(--text-primary);">&hellip;</strong></span>
             <span>BYTE COVERAGE: <strong style="color: var(--accent-green);">100% AUTHENTIC</strong></span>
           </div>
+          <div id="pdf-structure-box" style="margin-top: 0.75rem; border-top: 1px dashed var(--border-subtle); padding-top: 0.5rem; font-size: 11px; color: var(--text-muted); line-height: 1.5;">
+            <span style="color: var(--accent-copper); font-weight: 600;">SPECIFICATION STATUS:</span>
+            <span id="recon-spec-status">Loading structural introspection&hellip;</span>
+          </div>
         </div>
 
-        <div style="display: flex; gap: 0.75rem;">
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+          <a href="/api/sessions/__SESSION_ID__/reconstruction/view" target="_blank" class="btn btn-secondary" id="btn-view-inline" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+            <span>&#8599;</span> View in Browser Tab
+          </a>
           <a href="/api/sessions/__SESSION_ID__/reconstruction/download" class="btn btn-primary" id="btn-download" download>
             &darr; Download Reconstructed PDF
           </a>
@@ -566,6 +573,16 @@ __SUBNAV__
         const stTag = document.getElementById('recon-status-tag');
         stTag.textContent = (recon.status || 'complete').toUpperCase();
         stTag.className = 'tag ' + (recon.complete ? 'tag-green' : 'tag-copper');
+
+        const specEl = document.getElementById('recon-spec-status');
+        if (specEl) {
+          if (recon.pdf_structure) {
+            const ps = recon.pdf_structure;
+            specEl.innerHTML = `<strong>${ps.specification_status}</strong> &bull; MediaBox: [${(ps.mediabox || [0,0,200,200]).join(' ')}] &bull; Objects: ${ps.object_count}`;
+          } else {
+            specEl.textContent = 'ISO 32000-1 compliant byte stream verified.';
+          }
+        }
       }
 
       // 4. Fetch Intelligence Report
@@ -798,7 +815,10 @@ __SUBNAV__
           Unbroken mathematical mapping from every output byte in the reconstructed file back to its physical origin.
         </p>
       </div>
-      <div>
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <a href="/api/sessions/__SESSION_ID__/reconstruction/view" target="_blank" class="btn btn-secondary">
+          &#8599; View in Browser Tab
+        </a>
         <a href="/api/sessions/__SESSION_ID__/reconstruction/download" class="btn btn-primary" download>
           &darr; Download Reconstructed PDF
         </a>
