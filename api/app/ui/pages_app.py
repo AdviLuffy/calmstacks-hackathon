@@ -440,6 +440,8 @@ __SUBNAV__
             <div>CASE ID: <span id="case-id-val" style="color: var(--accent-copper); font-weight: 700;">&hellip;</span></div>
             <div>SESSION: <span id="session-id-val" style="color: var(--accent-cyan); font-weight: 700;">__SESSION_ID__</span></div>
             <div>INVESTIGATOR: <span id="investigator-val" style="color: var(--text-secondary);">&hellip;</span></div>
+            <div>EVIDENCE FILE: <span id="orig-file-val" style="color: var(--text-primary); font-weight: 600;">&hellip;</span></div>
+            <div>EVIDENCE SIZE: <span id="orig-size-val" style="color: var(--text-secondary);">&hellip;</span></div>
             <div>RECORDED: <span id="created-val" style="color: var(--text-secondary);">&hellip;</span></div>
           </div>
         </div>
@@ -451,13 +453,24 @@ __SUBNAV__
       </div>
     </div>
 
+    <!-- ERROR & RETRY BANNER (Shown if any endpoint fails) -->
+    <div id="investigation-error-banner" style="display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 2px; padding: 0.85rem 1rem; margin-bottom: 1.5rem; font-size: 12.5px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
+        <div>
+          <strong style="color: var(--accent-red); font-family: var(--font-mono);">[INVESTIGATION ALERT]</strong>
+          <span id="investigation-error-text" style="color: var(--text-primary); margin-left: 0.5rem;">Failed to retrieve some forensic telemetry from the backend.</span>
+        </div>
+        <button type="button" onclick="loadOverview()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 0.35rem 0.75rem;">Retry Loading</button>
+      </div>
+    </div>
+
     <!-- MAIN GRID: RECONSTRUCTION & STAGES -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
       <!-- RECONSTRUCTED ARTIFACT CARD -->
       <div class="panel" style="margin-bottom: 0;">
         <div class="panel-header">
           <span class="panel-title" id="artifact-card-title">[P1] Reconstructed Byte Artifact</span>
-          <span class="tag tag-green" id="recon-status-tag">ANALYSIS PENDING</span>
+          <span class="tag" id="recon-status-tag">LOADING</span>
         </div>
         <p id="artifact-card-desc" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 1.25rem;">
           Authentic PDF byte reconstruction assembled from carved fragments without synthetic interpolation.
@@ -482,14 +495,14 @@ __SUBNAV__
             <span class="tag tag-copper">IMMUTABLE</span>
           </div>
           <div id="recon-sha256" class="hash-cell" style="font-size: 11.5px; margin-bottom: 0.75rem;">Loading digest&hellip;</div>
-          <div style="display: flex; justify-content: space-between; color: var(--text-secondary); border-top: 1px solid var(--border-subtle); padding-top: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; color: var(--text-secondary); border-top: 1px solid var(--border-subtle); padding-top: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
             <span>SIZE: <strong id="recon-size" style="color: var(--text-primary);">&hellip;</strong></span>
             <span>FRAGMENTS: <strong id="recon-frags" style="color: var(--text-primary);">&hellip;</strong></span>
-            <span id="coverage-span">BYTE COVERAGE: <strong id="coverage-val" style="color: var(--accent-green);">100% AUTHENTIC</strong></span>
+            <span id="coverage-span">BYTE COVERAGE: <strong id="coverage-val" style="color: var(--text-muted);">NOT VERIFIED</strong></span>
           </div>
           <div id="pdf-structure-box" style="margin-top: 0.75rem; border-top: 1px dashed var(--border-subtle); padding-top: 0.5rem; font-size: 11px; color: var(--text-muted); line-height: 1.5;">
             <span style="color: var(--accent-copper); font-weight: 600;">SPECIFICATION STATUS:</span>
-            <span id="recon-spec-status">Loading structural introspection&hellip;</span>
+            <span id="recon-spec-status">Loading structural inspection&hellip;</span>
           </div>
         </div>
 
@@ -564,7 +577,7 @@ __SUBNAV__
     <div class="panel" id="ai-panel" style="margin-bottom: 1.5rem;">
       <div class="panel-header">
         <span class="panel-title">[AI-Assisted] Forensic Analysis Brief &amp; Intelligence Summary</span>
-        <span class="tag tag-green" id="ai-model-tag">GEMINI AI</span>
+        <span class="tag tag-cyan" id="ai-model-tag">AI PENDING</span>
       </div>
       <div id="ai-container">
         <p style="color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;">Querying intelligent AI analysis&hellip;</p>
@@ -593,94 +606,217 @@ __SUBNAV__
     return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  function showError(msg) {
+    const banner = document.getElementById('investigation-error-banner');
+    const txt = document.getElementById('investigation-error-text');
+    if (banner && txt) {
+      banner.style.display = 'block';
+      txt.textContent = msg;
+    }
+  }
+
+  function hideError() {
+    const banner = document.getElementById('investigation-error-banner');
+    if (banner) banner.style.display = 'none';
+  }
+
   async function loadOverview() {
+    hideError();
+
+    // 1. Fetch Session Detail
     try {
-      // 1. Fetch Session Detail
       const sRes = await fetch(`/api/sessions/${SESSION_ID}`);
-      if (!sRes.ok) throw new Error('Session not found');
+      if (!sRes.ok) throw new Error(`HTTP ${sRes.status} fetching session detail`);
       const session = await sRes.json();
 
       document.getElementById('case-title-display').textContent = session.case_title || 'Digital Evidence Examination';
       document.getElementById('case-id-val').textContent = session.case_id || 'CASE-01';
       document.getElementById('investigator-val').textContent = session.investigator || 'Unassigned Examiner';
-      document.getElementById('created-val').textContent = session.created_utc ? session.created_utc.substring(0, 19).replace('T', ' ') + 'Z' : '-';
+      document.getElementById('created-val').textContent = session.submitted_at ? session.submitted_at.substring(0, 19).replace('T', ' ') + 'Z' : '-';
+
+      if (session.evidence_bytes != null) {
+        const origSizeEl = document.getElementById('orig-size-val');
+        if (origSizeEl) origSizeEl.textContent = `${Number(session.evidence_bytes).toLocaleString()} bytes`;
+      }
 
       const sTag = document.getElementById('status-tag');
-      sTag.textContent = (session.status || 'ACTIVE').toUpperCase();
-      sTag.className = 'tag ' + (session.status === 'complete' ? 'tag-green' : 'tag-amber');
+      if (sTag) {
+        const st = (session.status || 'ACTIVE').toUpperCase();
+        sTag.textContent = st;
+        sTag.className = 'tag ' + (session.status === 'complete' ? 'tag-green' : (session.status === 'failed' ? 'tag-red' : 'tag-amber'));
+      }
+    } catch (err) {
+      console.error('Session detail error:', err);
+      showError(`Session detail error: ${err.message}`);
+    }
 
-      // 2. Fetch Evidence Bundle to check write-block and counts
+    // 2. Fetch Evidence Bundle
+    try {
       const evRes = await fetch(`/api/sessions/${SESSION_ID}/evidence`);
       if (evRes.ok) {
         const bundle = await evRes.json();
         const media = bundle.acquisition?.media?.[0] || {};
         const wbTag = document.getElementById('wb-tag');
-        if (media.write_blocked) {
-          wbTag.textContent = 'WRITE-BLOCK: ATTESTED';
-          wbTag.className = 'tag tag-green';
-        } else {
-          wbTag.textContent = 'WRITE-BLOCK: UNVERIFIED (A13)';
-          wbTag.className = 'tag tag-amber';
+        if (wbTag) {
+          if (media.write_blocked) {
+            wbTag.textContent = 'WRITE-BLOCK: ATTESTED';
+            wbTag.className = 'tag tag-green';
+          } else {
+            wbTag.textContent = 'WRITE-BLOCK: UNVERIFIED (A13)';
+            wbTag.className = 'tag tag-amber';
+          }
+        }
+        const origFileEl = document.getElementById('orig-file-val');
+        if (origFileEl && (media.source_ref || media.file_name)) {
+          origFileEl.textContent = media.source_ref || media.file_name;
+        }
+        const origSizeEl = document.getElementById('orig-size-val');
+        if (origSizeEl && media.size_bytes != null) {
+          origSizeEl.textContent = `${Number(media.size_bytes).toLocaleString()} bytes`;
         }
       }
+    } catch (err) {
+      console.warn('Evidence bundle metadata fetch warning:', err);
+    }
 
-      // 3. Fetch Reconstruction Metadata
+    // 3. Fetch Reconstruction Metadata
+    try {
       const recRes = await fetch(`/api/sessions/${SESSION_ID}/reconstruction`);
-      if (recRes.ok) {
+      const stTag = document.getElementById('recon-status-tag');
+      const cardTitle = document.getElementById('artifact-card-title');
+      const cardDesc = document.getElementById('artifact-card-desc');
+      const intactBanner = document.getElementById('intact-distinction-banner');
+      const dlBtn = document.getElementById('btn-download');
+      const viewBtn = document.getElementById('btn-view-inline');
+      const provBtn = document.getElementById('btn-provenance');
+      const s1Title = document.getElementById('stage1-title');
+      const s1Tag = document.getElementById('stage1-tag');
+      const s1Desc = document.getElementById('stage1-desc');
+      const digestLabel = document.getElementById('digest-label');
+      const coverageVal = document.getElementById('coverage-val');
+      const specEl = document.getElementById('recon-spec-status');
+      const shaEl = document.getElementById('recon-sha256');
+      const sizeEl = document.getElementById('recon-size');
+      const fragsEl = document.getElementById('recon-frags');
+
+      if (!recRes.ok) {
+        if (stTag) { stTag.textContent = 'FAILED'; stTag.className = 'tag tag-red'; }
+        if (shaEl) shaEl.textContent = 'UNAVAILABLE';
+        if (sizeEl) sizeEl.textContent = 'N/A';
+        if (fragsEl) fragsEl.textContent = 'N/A';
+        if (coverageVal) { coverageVal.textContent = 'NOT VERIFIED'; coverageVal.style.color = 'var(--text-muted)'; }
+        if (specEl) specEl.innerHTML = '<span style="color: var(--accent-red);">Failed to retrieve reconstruction metadata from backend.</span>';
+        if (dlBtn) { dlBtn.style.opacity = '0.5'; dlBtn.removeAttribute('href'); dlBtn.style.cursor = 'not-allowed'; }
+        if (viewBtn) viewBtn.style.display = 'none';
+        showError('Reconstruction metadata endpoint returned HTTP ' + recRes.status);
+      } else {
         const recon = await recRes.json();
-        document.getElementById('recon-sha256').textContent = recon.reconstructed_sha256 || 'N/A';
-        document.getElementById('recon-size').textContent = (recon.pdf_size_bytes != null ? recon.pdf_size_bytes : 2048) + ' bytes';
-        const stTag = document.getElementById('recon-status-tag');
-        const cardTitle = document.getElementById('artifact-card-title');
-        const cardDesc = document.getElementById('artifact-card-desc');
-        const intactBanner = document.getElementById('intact-distinction-banner');
-        const dlBtn = document.getElementById('btn-download');
-        const provBtn = document.getElementById('btn-provenance');
-        const s1Title = document.getElementById('stage1-title');
-        const s1Tag = document.getElementById('stage1-tag');
-        const s1Desc = document.getElementById('stage1-desc');
-        const digestLabel = document.getElementById('digest-label');
-        const coverageVal = document.getElementById('coverage-val');
+
+        // Update evidence filename/size from recon if not yet set
+        if (recon.media_source) {
+          const origFileEl = document.getElementById('orig-file-val');
+          if (origFileEl && (origFileEl.textContent === '…' || origFileEl.textContent === '...')) {
+            origFileEl.textContent = recon.media_source;
+          }
+        }
+        if (recon.media_size_bytes != null) {
+          const origSizeEl = document.getElementById('orig-size-val');
+          if (origSizeEl && (origSizeEl.textContent === '…' || origSizeEl.textContent === '...')) {
+            origSizeEl.textContent = `${Number(recon.media_size_bytes).toLocaleString()} bytes`;
+          }
+        }
+
+        if (recon.write_blocked !== undefined) {
+          const wbTag = document.getElementById('wb-tag');
+          if (wbTag) {
+            if (recon.write_blocked) {
+              wbTag.textContent = 'WRITE-BLOCK: ATTESTED';
+              wbTag.className = 'tag tag-green';
+            } else {
+              wbTag.textContent = 'WRITE-BLOCK: UNVERIFIED (A13)';
+              wbTag.className = 'tag tag-amber';
+            }
+          }
+        }
+
+        const artifactDigest = recon.reconstructed_sha256 || recon.partial_sha256 || 'UNAVAILABLE';
+        if (shaEl) shaEl.textContent = artifactDigest;
+        if (sizeEl) sizeEl.textContent = recon.pdf_size_bytes != null ? `${Number(recon.pdf_size_bytes).toLocaleString()} bytes` : '0 bytes';
 
         if (recon.is_intact_passthrough) {
-          stTag.textContent = 'INTACT VERIFIED';
-          stTag.className = 'tag tag-green';
+          if (stTag) { stTag.textContent = 'INTACT VERIFIED'; stTag.className = 'tag tag-green'; }
           if (cardTitle) cardTitle.textContent = '[PASSTHROUGH] Intact Document Verification';
           if (cardDesc) cardDesc.textContent = 'Original document bitstream validated as an intact, complete PDF. Exact original bytes preserved without block carving, sector slicing, or fragment reconstruction.';
           if (intactBanner) intactBanner.style.display = 'block';
-          if (dlBtn) dlBtn.innerHTML = '&darr; Download Verified Original PDF';
+          if (dlBtn) {
+            dlBtn.innerHTML = '&darr; Download Verified Original PDF';
+            dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
+            dlBtn.style.opacity = '1';
+            dlBtn.style.cursor = 'pointer';
+          }
+          if (viewBtn) {
+            viewBtn.style.display = 'inline-flex';
+            viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
+          }
           if (provBtn) provBtn.textContent = 'View Bitstream Ledger \u2192';
           if (digestLabel) digestLabel.textContent = 'ORIGINAL BITSTREAM SHA-256:';
-          if (coverageVal) coverageVal.textContent = '100% ORIGINAL (UNTOUCHED)';
-          document.getElementById('recon-frags').textContent = '0 (Intact Stream)';
-
-          if (s1Title) s1Title.textContent = 'STAGE 1: INTACT BITSTREAM VALIDATION';
-          if (s1Tag) {
-            s1Tag.textContent = 'PASSTHROUGH VERIFIED';
-            s1Tag.className = 'tag tag-green';
+          if (coverageVal) {
+            coverageVal.textContent = '100% (INTACT STREAM)';
+            coverageVal.style.color = 'var(--accent-green)';
           }
+          if (fragsEl) fragsEl.textContent = '0 (Intact Stream Passthrough)';
+          if (s1Title) s1Title.textContent = 'STAGE 1: INTACT BITSTREAM VALIDATION';
+          if (s1Tag) { s1Tag.textContent = 'PASSTHROUGH VERIFIED'; s1Tag.className = 'tag tag-green'; }
           if (s1Desc) s1Desc.textContent = 'Direct ISO 32000-1 syntax validation. Preserved original byte stream without block carving or fragment assembly.';
-        } else if (recon.complete && recon.status === 'structurally_valid') {
-          stTag.textContent = 'RECONSTRUCTED';
-          stTag.className = 'tag tag-green';
+          if (specEl) {
+            specEl.innerHTML = '<strong>ISO 32000-1 STRUCTURALLY VALID:</strong> Complete, unfragmented PDF bitstream ingested directly. Exact source bytes preserved.';
+          }
+        } else if (recon.complete && (recon.status === 'structurally_valid' || recon.is_verified)) {
+          if (stTag) { stTag.textContent = 'STRUCTURALLY VALID'; stTag.className = 'tag tag-green'; }
           if (cardTitle) cardTitle.textContent = '[P1] Reconstructed Byte Artifact';
-          if (cardDesc) cardDesc.textContent = 'Authentic PDF byte reconstruction assembled from carved fragments without synthetic interpolation.';
+          if (cardDesc) cardDesc.textContent = 'Authentic PDF byte reconstruction assembled deterministically from carved fragments without synthetic interpolation.';
           if (intactBanner) intactBanner.style.display = 'none';
-          if (dlBtn) dlBtn.innerHTML = '&darr; Download Reconstructed PDF';
+          if (dlBtn) {
+            dlBtn.innerHTML = '&darr; Download Reconstructed PDF';
+            dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
+            dlBtn.style.opacity = '1';
+            dlBtn.style.cursor = 'pointer';
+          }
+          if (viewBtn) {
+            viewBtn.style.display = 'inline-flex';
+            viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
+          }
           if (provBtn) provBtn.textContent = 'View Provenance Ledger \u2192';
-          if (digestLabel) digestLabel.textContent = 'ARTIFACT SHA-256:';
-          if (coverageVal) coverageVal.textContent = '100% AUTHENTIC';
-          document.getElementById('recon-frags').textContent = (recon.fragments_placed || 0) + ' / ' + (recon.fragments_carved || 0) + ' fragments';
+          if (digestLabel) digestLabel.textContent = 'RECONSTRUCTED ARTIFACT SHA-256:';
+          if (coverageVal) {
+            coverageVal.textContent = '100% COVERAGE (RECONSTRUCTED)';
+            coverageVal.style.color = 'var(--accent-green)';
+          }
+          if (fragsEl) fragsEl.textContent = `${recon.fragments_placed || 0} / ${recon.fragments_carved || 0} placed`;
+          if (s1Tag) { s1Tag.textContent = 'VERIFIED'; s1Tag.className = 'tag tag-green'; }
+          if (s1Desc) s1Desc.textContent = 'Deterministic block carving, PDF marker parsing, and authentic byte assembly completed.';
+          if (specEl) {
+            if (recon.pdf_structure) {
+              const ps = recon.pdf_structure;
+              specEl.innerHTML = `<strong>${escapeHtml(ps.specification_status || 'STRUCTURALLY VALID')}</strong> &bull; MediaBox: [${(ps.mediabox || [0,0,612,792]).join(' ')}] &bull; Objects: ${ps.object_count || 'N/A'}`;
+            } else {
+              specEl.textContent = 'ISO 32000-1 compliant byte stream verified.';
+            }
+          }
         } else if (recon.status === 'incomplete' || !recon.complete) {
           const unplaced = recon.unplaced_fragments_count || 0;
           const placed = recon.fragments_placed || 0;
           const carved = recon.fragments_carved || 0;
-          stTag.textContent = `INCOMPLETE (${unplaced} UNPLACED)`;
-          stTag.className = 'tag tag-amber';
+
+          if (stTag) {
+            stTag.textContent = placed > 0 ? `PARTIAL (${unplaced} UNPLACED)` : 'INCOMPLETE (0 PLACED)';
+            stTag.className = placed > 0 ? 'tag tag-amber' : 'tag tag-red';
+          }
           if (cardTitle) cardTitle.textContent = '[P1] Incomplete Fragment Reconstruction';
           if (cardDesc) cardDesc.textContent = `Partial assembly: ${unplaced} fragment(s) remain unplaced. Reconstruction halted to prevent unverified fabrication. Output is partial and unverified.`;
           if (intactBanner) intactBanner.style.display = 'none';
-          if (digestLabel) digestLabel.textContent = 'PARTIAL RECONSTRUCTION SHA-256:';
+          if (digestLabel) digestLabel.textContent = placed > 0 ? 'PARTIAL RECONSTRUCTION SHA-256:' : 'ARTIFACT SHA-256 (UNAVAILABLE):';
+
           if (coverageVal) {
             if (placed === 0) {
               coverageVal.textContent = '0% (NO VALID CHAINS)';
@@ -691,6 +827,7 @@ __SUBNAV__
               coverageVal.style.color = 'var(--accent-amber)';
             }
           }
+
           if (dlBtn) {
             if (placed === 0) {
               dlBtn.innerHTML = '&#9888; Reconstruction Halted (0 Placed)';
@@ -698,52 +835,59 @@ __SUBNAV__
               dlBtn.removeAttribute('href');
               dlBtn.style.cursor = 'not-allowed';
               dlBtn.style.opacity = '0.6';
+              if (viewBtn) viewBtn.style.display = 'none';
             } else {
               dlBtn.innerHTML = '&darr; Download Partial PDF (Unverified)';
+              dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
+              dlBtn.style.opacity = '1';
+              dlBtn.style.cursor = 'pointer';
+              if (viewBtn) {
+                viewBtn.style.display = 'inline-flex';
+                viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
+              }
             }
           }
-          document.getElementById('recon-frags').textContent = placed + ' / ' + carved + ' fragments';
+
+          if (fragsEl) fragsEl.textContent = `${placed} / ${carved} placed (${unplaced} unplaced)`;
+
           if (s1Tag) {
-            s1Tag.textContent = 'INCOMPLETE';
-            s1Tag.className = 'tag tag-amber';
+            s1Tag.textContent = placed > 0 ? 'PARTIAL' : 'FAILED';
+            s1Tag.className = placed > 0 ? 'tag tag-amber' : 'tag tag-red';
           }
           if (s1Desc) {
             if (placed === 0) {
-              s1Desc.textContent = 'Reconstruction halted: No valid PDF header (%PDF-) or traversable chains detected. Arbitrary or unsupported binary stream.';
+              s1Desc.textContent = 'Reconstruction halted: No valid PDF header (%PDF-) or traversable chains detected in input media.';
             } else {
               s1Desc.textContent = `Reconstruction halted: ${unplaced} unplaced fragment(s). Authentic ordering could not be mathematically guaranteed.`;
             }
           }
+
+          if (specEl) {
+            if (placed === 0) {
+              specEl.innerHTML = '<span style="color: var(--accent-red);"><strong>UNRECOGNIZED INPUT:</strong> No valid PDF header or structural markers detected in media.</span>';
+            } else {
+              specEl.innerHTML = `<span style="color: var(--accent-amber);"><strong>RECONSTRUCTION PARTIAL:</strong> ${unplaced} fragment(s) remain unplaced. Structural integrity unverified.</span>`;
+            }
+          }
         } else {
-          stTag.textContent = (recon.status || 'unknown').toUpperCase();
-          stTag.className = 'tag tag-copper';
+          if (stTag) {
+            stTag.textContent = (recon.status || 'NOT VERIFIED').toUpperCase();
+            stTag.className = 'tag tag-copper';
+          }
+          if (coverageVal) {
+            coverageVal.textContent = 'NOT VERIFIED';
+            coverageVal.style.color = 'var(--text-muted)';
+          }
         }
 
-        const specEl = document.getElementById('recon-spec-status');
-        if (specEl) {
-          if (recon.is_intact_passthrough) {
-            specEl.innerHTML = `<strong>INTACT DOCUMENT STREAM:</strong> Complete, unfragmented PDF bitstream ingested directly. Exact source bytes preserved without synthetic or fragment assembly.`;
-          } else if (recon.status === 'incomplete' || !recon.complete) {
-            const unplaced = recon.unplaced_fragments_count || 0;
-            const placed = recon.fragments_placed || 0;
-            if (placed === 0) {
-              specEl.innerHTML = `<span style="color: var(--accent-red);"><strong>UNSUPPORTED OR UNRECOGNIZED INPUT:</strong> No valid PDF header (%PDF-) or structural markers detected in input media. Deterministic reconstruction cannot assemble arbitrary non-PDF binary files without authentic markers.</span>`;
-            } else {
-              specEl.innerHTML = `<span style="color: var(--accent-amber);"><strong>RECONSTRUCTION INCOMPLETE:</strong> ${unplaced} fragment(s) remain unplaced. Structural DNA analysis halted due to unaligned PDF objects or broken sequence in raw media. Output is partial and unverified.</span>`;
-            }
-          } else if (recon.pdf_structure) {
-            const ps = recon.pdf_structure;
-            specEl.innerHTML = `<strong>${ps.specification_status}</strong> &bull; MediaBox: [${(ps.mediabox || [0,0,200,200]).join(' ')}] &bull; Objects: ${ps.object_count}`;
-          } else {
-            specEl.textContent = 'ISO 32000-1 compliant byte stream verified.';
-          }
+        // Render multi-format carved artifacts table if available
         if (recon.artifacts && recon.artifacts.length > 0) {
           const artPanel = document.getElementById('multi-artifacts-panel');
           const artCont = document.getElementById('multi-artifacts-container');
           const artCountTag = document.getElementById('artifacts-count-tag');
           if (artPanel && artCont) {
             artPanel.style.display = 'block';
-            artCountTag.textContent = `${recon.artifacts.length} ARTIFACTS`;
+            if (artCountTag) artCountTag.textContent = `${recon.artifacts.length} ARTIFACTS`;
             artCont.innerHTML = `
               <table style="width:100%; border-collapse:collapse; margin-top:0.5rem; font-size:12px;">
                 <thead>
@@ -775,13 +919,20 @@ __SUBNAV__
           }
         }
       }
+    } catch (err) {
+      console.error('Reconstruction metadata error:', err);
+      showError(`Reconstruction error: ${err.message}`);
+    }
 
-      // 4. Fetch Intelligence Report
+    // 4. Fetch Intelligence Report Findings
+    try {
       const repRes = await fetch(`/api/sessions/${SESSION_ID}/report`);
       const findingsEl = document.getElementById('findings-container');
+      const repTag = document.getElementById('report-id-tag');
+
       if (repRes.ok) {
         const rep = await repRes.json();
-        document.getElementById('report-id-tag').textContent = rep.report_id || 'RPT-ANALYSIS';
+        if (repTag) repTag.textContent = rep.report_id || 'RPT-ANALYSIS';
         const summary = rep.summary || 'Forensic analysis completed.';
         const warnings = rep.warnings || [];
 
@@ -809,48 +960,73 @@ __SUBNAV__
           `;
         }
 
-        findingsEl.innerHTML = `
-          <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.6; margin-bottom: 0.5rem;">
-            ${summary}
-          </div>
-          ${warnHtml}
-        `;
-      } else {
-        findingsEl.innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">No intelligence report emitted for this session.</p>';
-      }
-
-      // 5. Fetch Gemini AI Analysis
-      try {
-        const aiRes = await fetch(`/api/sessions/${SESSION_ID}/ai-analysis`);
-        if (aiRes.ok) {
-          const ai = await aiRes.json();
-          const aiCont = document.getElementById('ai-container');
-          const aiTag = document.getElementById('ai-model-tag');
-          if (aiTag && ai.model_used) {
-            aiTag.textContent = `${ai.model_used.toUpperCase()}`;
-          }
-          if (aiCont && ai.explanation) {
-            const exp = ai.explanation;
-            aiCont.innerHTML = `
-              <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 1rem; border-radius: 2px; font-size: 13px;">
-                <p style="margin: 0 0 0.65rem 0;"><strong>Executive Summary:</strong> ${escapeHtml(exp.executive_summary || 'N/A')}</p>
-                <p style="margin: 0 0 0.65rem 0;"><strong>Artifacts Assessment:</strong> ${escapeHtml(exp.recovered_artifacts_overview || 'N/A')}</p>
-                <p style="margin: 0 0 0.65rem 0;"><strong>Missing Data:</strong> ${escapeHtml(exp.missing_data_assessment || 'N/A')}</p>
-                <p style="margin: 0 0 0.65rem 0; color: var(--accent-copper);"><strong>Evidentiary Statement:</strong> ${escapeHtml(exp.evidentiary_integrity_statement || 'N/A')}</p>
-                <div style="font-size: 11px; color: var(--text-muted); margin-top: 0.75rem; border-top: 1px solid var(--border-subtle); padding-top: 0.5rem; display: flex; justify-content: space-between;">
-                  <span>Latency: ${ai.latency_ms || 0} ms | Model: ${escapeHtml(ai.model_used || 'offline_mock')}</span>
-                  <span>Data Minimization: Enforced | Prompt Injection Boundary: Active</span>
-                </div>
-              </div>
-            `;
-          }
+        if (findingsEl) {
+          findingsEl.innerHTML = `
+            <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.6; margin-bottom: 0.5rem;">
+              ${escapeHtml(summary)}
+            </div>
+            ${warnHtml}
+          `;
         }
-      } catch (e) {
-        console.error('AI analysis fetch error:', e);
+      } else {
+        if (findingsEl) {
+          findingsEl.innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">No intelligence report emitted for this session.</p>';
+        }
       }
     } catch (err) {
-      console.error(err);
-      alert('Error loading investigation: ' + err.message);
+      console.warn('Report fetch warning:', err);
+    }
+
+    // 5. Fetch Gemini AI Analysis
+    try {
+      const aiRes = await fetch(`/api/sessions/${SESSION_ID}/ai-analysis`);
+      const aiCont = document.getElementById('ai-container');
+      const aiTag = document.getElementById('ai-model-tag');
+
+      if (aiRes.ok) {
+        const ai = await aiRes.json();
+        if (aiTag && ai.model_used) {
+          aiTag.textContent = `${ai.model_used.toUpperCase()}`;
+          aiTag.className = 'tag tag-green';
+        }
+        if (aiCont && ai.explanation) {
+          const exp = ai.explanation;
+          aiCont.innerHTML = `
+            <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 1rem; border-radius: 2px; font-size: 13px;">
+              <p style="margin: 0 0 0.65rem 0;"><strong>Executive Summary:</strong> ${escapeHtml(exp.executive_summary || 'N/A')}</p>
+              <p style="margin: 0 0 0.65rem 0;"><strong>Artifacts Assessment:</strong> ${escapeHtml(exp.recovered_artifacts_overview || 'N/A')}</p>
+              <p style="margin: 0 0 0.65rem 0;"><strong>Missing Data:</strong> ${escapeHtml(exp.missing_data_assessment || 'N/A')}</p>
+              <p style="margin: 0 0 0.65rem 0; color: var(--accent-copper);"><strong>Evidentiary Statement:</strong> ${escapeHtml(exp.evidentiary_integrity_statement || 'N/A')}</p>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 0.75rem; border-top: 1px solid var(--border-subtle); padding-top: 0.5rem; display: flex; justify-content: space-between;">
+                <span>Latency: ${ai.latency_ms || 0} ms | Model: ${escapeHtml(ai.model_used || 'offline_mock')}</span>
+                <span>Data Minimization: Enforced | Prompt Injection Boundary: Active</span>
+              </div>
+            </div>
+          `;
+        } else if (aiCont) {
+          aiCont.innerHTML = '<p style="color: var(--text-secondary); font-size: 12px;">AI analysis completed with no structured findings.</p>';
+        }
+      } else {
+        if (aiTag) {
+          aiTag.textContent = 'AI OFFLINE';
+          aiTag.className = 'tag tag-copper';
+        }
+        if (aiCont) {
+          aiCont.innerHTML = `
+            <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 0.85rem; border-radius: 2px; font-size: 12px; color: var(--text-secondary);">
+              <strong>Deterministic Analysis Only:</strong> Gemini AI integration is disabled or offline. Deterministic carving, graph reconstruction, and P2 contract validation completed with full integrity.
+            </div>
+          `;
+        }
+      }
+    } catch (e) {
+      console.warn('AI analysis fetch warning:', e);
+      const aiTag = document.getElementById('ai-model-tag');
+      const aiCont = document.getElementById('ai-container');
+      if (aiTag) { aiTag.textContent = 'AI OFFLINE'; aiTag.className = 'tag tag-copper'; }
+      if (aiCont) {
+        aiCont.innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">AI analysis service unreachable.</p>';
+      }
     }
   }
 

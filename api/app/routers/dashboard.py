@@ -233,7 +233,10 @@ async def carve_raw_evidence(
                 "provenance": [],
                 "byte_coverage": "100%",
                 "media_source": filename,
+                "media_size_bytes": len(media_bytes),
                 "media_sha256": intact_telemetry["sha256"],
+                "write_blocked": bool(write_blocked),
+                "has_reconstructed_file": True,
                 "pdf_structure": intact_telemetry,
                 "forensic_notice": (
                     "Complete, unfragmented PDF bitstream ingested directly. "
@@ -323,11 +326,35 @@ async def carve_raw_evidence(
         # Never mark incomplete or unplaced reconstruction as verified
         is_verified = bool(pipeline_result.integrity_report.is_verified and is_complete)
 
+        safe_media_name = (
+            file.filename
+            if file and file.filename
+            else (
+                "TRACE_Scrambled_Evidence.bin"
+                if fixture_id == "scrambled_evidence_blob"
+                else (
+                    "blob_visible_text.bin"
+                    if fixture_id == "visible_text_blob"
+                    else (
+                        "blob_1337.bin"
+                        if fixture_id == "synthetic_blob"
+                        else Path(media_path).name
+                    )
+                )
+            )
+        )
+        actual_pdf_sha256 = (
+            pipeline_result.integrity_report.reconstructed_sha256
+            if is_complete
+            else (hashlib.sha256(raw_pdf_bytes).hexdigest() if raw_pdf_bytes else None)
+        )
+
         _RECONSTRUCTED_META[record.session_id] = {
             "session_id": record.session_id,
             "status": recon_status,
             "complete": is_complete,
             "reconstructed_sha256": pipeline_result.integrity_report.reconstructed_sha256 if is_complete else None,
+            "partial_sha256": hashlib.sha256(raw_pdf_bytes).hexdigest() if raw_pdf_bytes else None,
             "is_verified": is_verified,
             "is_intact_passthrough": False,
             "pdf_size_bytes": len(raw_pdf_bytes),
@@ -336,8 +363,11 @@ async def carve_raw_evidence(
             "unplaced_fragments_count": unplaced_count,
             "provenance": provenance_list,
             "byte_coverage": "100%" if is_complete else f"{(len(pipeline_result.reconstruction.fragment_order)/max(1, len(pipeline_result.scan.fragments)))*100:.1f}%",
-            "media_source": Path(media_path).name,
+            "media_source": safe_media_name,
+            "media_size_bytes": len(media_bytes),
             "media_sha256": pipeline_result.scan.media_sha256,
+            "write_blocked": bool(write_blocked),
+            "has_reconstructed_file": bool(raw_pdf_bytes and len(raw_pdf_bytes) > 0 and len(pipeline_result.reconstruction.fragment_order) > 0),
             "pdf_structure": structure_info,
             "reconstruction_errors": list(pipeline_result.reconstruction.validation.errors) if not is_complete else [],
             "forensic_notice": (
@@ -435,19 +465,6 @@ def _resolve_reconstructed_bytes(session_id: str, pipeline: PipelineDep, setting
             raise HTTPException(status_code=404, detail="No reconstructed byte artifact available: reconstruction was incomplete with 0 fragments placed.")
         return pdf_bytes
 
-    bundle = record.evidence_bundle or {}
-    media = (bundle.get("acquisition", {}).get("media") or [{}])[0]
-    filename = media.get("file_name", "")
-    vis = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "visible_text.pdf"
-    synth = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "synthetic.pdf"
-    scrambled_gt = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "TRACE_Scramble_Test_GroundTruth.pdf"
-    if "visible" in filename and vis.is_file():
-        return vis.read_bytes()
-    if ("Scrambled" in filename or "scrambled" in filename) and scrambled_gt.is_file():
-        return scrambled_gt.read_bytes()
-    if ("blob_1337" in filename or "synthetic" in filename) and synth.is_file():
-        return synth.read_bytes()
-
     raise HTTPException(status_code=404, detail="No reconstructed byte artifact available for this session")
 
 
@@ -481,15 +498,6 @@ def get_reconstruction_details(
         if disk_pdf.is_file():
             pdf_bytes = disk_pdf.read_bytes()
             _RECONSTRUCTED_FILES[session_id] = pdf_bytes
-        else:
-            media = (bundle.get("acquisition", {}).get("media") or [{}])[0]
-            filename = media.get("file_name", "")
-            vis = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "visible_text.pdf"
-            synth = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "synthetic.pdf"
-            if "visible" in filename and vis.is_file():
-                pdf_bytes = vis.read_bytes()
-            elif synth.is_file():
-                pdf_bytes = synth.read_bytes()
 
     structure_info = inspect_pdf_structure(pdf_bytes) if pdf_bytes else None
 
@@ -516,11 +524,27 @@ def get_reconstruction_details(
                  "Raw media does not meet 256-byte block alignment invariants or contains broken structural sequences."
         )
 
+    media = (bundle.get("acquisition", {}).get("media") or [{}])[0]
+    media_source = media.get("source_ref") or media.get("file_name") or "evidence.bin"
+    media_size = media.get("size_bytes")
+    media_sha256 = media.get("image_hashes", {}).get("sha256")
+    calc_sha256 = (
+        (ext.get("reconstructed_sha256") or (hashlib.sha256(pdf_bytes).hexdigest() if pdf_bytes else None))
+        if (is_intact or is_complete)
+        else None
+    )
+    part_sha256 = (
+        hashlib.sha256(pdf_bytes).hexdigest()
+        if (pdf_bytes and not is_complete and not is_intact)
+        else None
+    )
+
     return {
         "session_id": session_id,
         "status": status_val,
         "complete": is_complete,
-        "reconstructed_sha256": ext.get("reconstructed_sha256") if (is_intact or is_complete) else None,
+        "reconstructed_sha256": calc_sha256,
+        "partial_sha256": part_sha256,
         "is_verified": is_verified,
         "is_intact_passthrough": is_intact,
         "pdf_size_bytes": len(pdf_bytes) if pdf_bytes else None,
@@ -528,10 +552,15 @@ def get_reconstruction_details(
         "fragments_placed": placed_count,
         "unplaced_fragments_count": unplaced_count,
         "reconstruction_groups": rgroups,
-        "has_reconstructed_file": pdf_bytes is not None,
+        "has_reconstructed_file": pdf_bytes is not None and len(pdf_bytes) > 0,
         "byte_coverage": byte_cov,
         "pdf_structure": structure_info,
         "forensic_notice": notice,
+        "media_source": media_source,
+        "media_size_bytes": media_size,
+        "media_sha256": media_sha256,
+        "write_blocked": bool(media.get("write_blocked", False)),
+        "artifacts": [],
     }
 
 
