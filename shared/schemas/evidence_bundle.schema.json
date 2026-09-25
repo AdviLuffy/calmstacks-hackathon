@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:trace:evidence-bundle:1.0",
+  "title": "TRACE M0 evidence bundle (minimal vertical slice)",
+  "description": "Minimal M0 bundle. Emits only contract-frozen root key names and contains NO ground-truth or oracle data.",
+  "x-canonicalization": "trace-cj/1.0",
+  "type": "object",
+  "required": [
+    "x-canonicalization",
+    "engine",
+    "media",
+    "fragments",
+    "warnings"
+  ],
+  "properties": {
+    "x-canonicalization": {
+      "const": "trace-cj/1.0"
+    },
+    "engine": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "run_id"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Volatile per-run provenance value; excluded from deterministic hashing (P2 decision 10). Must not change a deterministic report_id."
+        }
+      }
+    },
+    "media": {
+      "type": "object",
+      "required": [
+        "size_bytes"
+      ],
+      "properties": {
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Complete source-media size, not a fragment or artifact size (P2 decision 6)."
+        }
+      }
+    },
+    "fragments": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:trace:evidence-fragment:1.0"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
