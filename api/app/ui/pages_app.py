@@ -30,8 +30,11 @@ def investigations_list_page() -> str:
         Launch an authentic end-to-end carving or contract validation pipeline in one click using verified repository fixtures.
       </p>
       <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <button onclick="launchFixture('visible_text_blob')" class="btn btn-primary btn-sm" id="btn-fix-visible">
+          [RUN] Visible Text PDF Blob (blob_visible_text.bin &bull; 10 fragments &bull; Visible Content Test)
+        </button>
         <button onclick="launchFixture('synthetic_blob')" class="btn btn-secondary btn-sm" id="btn-fix-blob">
-          [RUN] Synthetic PDF Blob (blob_1337.bin &bull; 8 fragments)
+          [RUN] Blank Canvas PDF Blob (blob_1337.bin &bull; 8 fragments)
         </button>
         <button onclick="launchFixture('bundle_minimal')" class="btn btn-secondary btn-sm" id="btn-fix-min">
           [LOAD] Contract Floor Bundle (bundle_minimal.json &bull; 0 fragments)
@@ -244,7 +247,8 @@ def new_analysis_page() -> str:
         <div id="synthetic-section">
           <label class="form-label" for="fixture_id">Select Test Fixture</label>
           <select id="fixture_id" name="fixture_id" class="form-select">
-            <option value="synthetic_blob">Deterministic Synthetic PDF Blob (blob_1337.bin &bull; 2,048 bytes &bull; 8 fragments)</option>
+            <option value="visible_text_blob">Visible Text Synthetic PDF Blob (blob_visible_text.bin &bull; 2,560 bytes &bull; 10 fragments &bull; Visible Content Test)</option>
+            <option value="synthetic_blob">Deterministic Synthetic PDF Blob (blob_1337.bin &bull; 2,048 bytes &bull; 8 fragments &bull; Blank Canvas)</option>
             <option value="bundle_minimal">M0 Contract Floor Bundle (bundle_minimal.json &bull; 2,127 bytes &bull; 0 fragments)</option>
             <option value="bundle_realistic">Realistic Multi-Fragment Bundle (bundle_realistic.json &bull; 25,709 bytes &bull; 5 fragments)</option>
           </select>

@@ -23,7 +23,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from trace_evidence import constants  # noqa: E402
-from trace_evidence.dataset import write_dataset  # noqa: E402
+from trace_evidence.dataset import write_dataset, write_visible_dataset  # noqa: E402
 from trace_evidence.hashing import sha256_file  # noqa: E402
 
 
@@ -38,6 +38,11 @@ def main(argv: list[str] | None = None) -> int:
         help=f"shuffle seed (default: {constants.DEFAULT_SEED})",
     )
     parser.add_argument(
+        "--visible",
+        action="store_true",
+        help="build visible-text synthetic PDF dataset with visible text reading 'TRACE FORENSIC RECONSTRUCTION TEST'",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         default=PROJECT_ROOT / "datasets",
@@ -45,7 +50,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    result = write_dataset(args.out, seed=args.seed)
+    if args.visible:
+        seed = args.seed if args.seed != constants.DEFAULT_SEED else 2026
+        result = write_visible_dataset(args.out, seed=seed)
+    else:
+        result = write_dataset(args.out, seed=args.seed)
     manifest = result["manifest"]
 
     print(f"dataset written to : {result['dataset_dir']}")

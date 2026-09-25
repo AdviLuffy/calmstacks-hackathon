@@ -61,6 +61,19 @@ def list_fixtures() -> dict[str, Any]:
             "ready_to_carve": True,
         },
         {
+            "fixture_id": "visible_text_blob",
+            "name": "Visible Text Synthetic PDF Blob (blob_visible_text.bin)",
+            "type": "raw_media",
+            "size_bytes": 2560,
+            "fragments_count": 10,
+            "expected_sha256": "9decf803a2cc4688356ebe1f6788ab577c637ec0f54cfd9dd52fae3b236435f2",
+            "media_sha256": "58e7de08b02f1808492632ad09275ee141bab20d994651ef10e2bded8ecaf032",
+            "description": "Deterministic 2560-byte raw disk image containing 10 shuffled fragments of a synthetic PDF with visible text: 'TRACE FORENSIC RECONSTRUCTION TEST'. Ground truth: visible_text.pdf",
+            "is_synthetic": True,
+            "label": "VISIBLE-CONTENT TEST FIXTURE",
+            "ready_to_carve": True,
+        },
+        {
             "fixture_id": "bundle_minimal",
             "name": "M0 Positive Contract Floor Bundle (bundle_minimal.json)",
             "type": "bundle",
@@ -128,6 +141,17 @@ async def carve_raw_evidence(
                 blob_path = alt
             else:
                 raise HTTPException(status_code=404, detail="Synthetic fixture blob_1337.bin not found on disk")
+        media_path = blob_path
+        media_bytes = blob_path.read_bytes()
+    elif fixture_id == "visible_text_blob":
+        # Visible text synthetic fixture
+        blob_path = EVIDENCE_DIR / "blob_visible_text.bin"
+        if not blob_path.is_file():
+            alt = REPO_ROOT / "evidence" / "datasets" / "evidence" / "blob_visible_text.bin"
+            if alt.is_file():
+                blob_path = alt
+            else:
+                raise HTTPException(status_code=404, detail="Visible test fixture blob_visible_text.bin not found on disk")
         media_path = blob_path
         media_bytes = blob_path.read_bytes()
     elif file is not None:
@@ -286,7 +310,13 @@ def _resolve_reconstructed_bytes(session_id: str, pipeline: PipelineDep, setting
         _RECONSTRUCTED_FILES[session_id] = pdf_bytes
         return pdf_bytes
 
+    bundle = record.evidence_bundle or {}
+    media = (bundle.get("acquisition", {}).get("media") or [{}])[0]
+    filename = media.get("file_name", "")
+    vis = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "visible_text.pdf"
     synth = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "synthetic.pdf"
+    if "visible" in filename and vis.is_file():
+        return vis.read_bytes()
     if synth.is_file():
         return synth.read_bytes()
 
@@ -324,8 +354,13 @@ def get_reconstruction_details(
             pdf_bytes = disk_pdf.read_bytes()
             _RECONSTRUCTED_FILES[session_id] = pdf_bytes
         else:
+            media = (bundle.get("acquisition", {}).get("media") or [{}])[0]
+            filename = media.get("file_name", "")
+            vis = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "visible_text.pdf"
             synth = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "synthetic.pdf"
-            if synth.is_file():
+            if "visible" in filename and vis.is_file():
+                pdf_bytes = vis.read_bytes()
+            elif synth.is_file():
                 pdf_bytes = synth.read_bytes()
 
     structure_info = inspect_pdf_structure(pdf_bytes) if pdf_bytes else None

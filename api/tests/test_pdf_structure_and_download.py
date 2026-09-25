@@ -16,6 +16,11 @@ BLOB_1337 = REPO_ROOT / "evidence" / "datasets" / "evidence" / "blob_1337.bin"
 EXPECTED_GROUNDTRUTH_SHA256 = "1ba5d499d667001095a9fefa4d57551538f742824bb2e2de1feae5e224d64caf"
 EXPECTED_BLOB_SHA256 = "2ef92ac2f6546f4036fe0223cf55e9ddad03371e30e451837cac03bc7d83ead6"
 
+VISIBLE_GROUNDTRUTH_PDF = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "visible_text.pdf"
+BLOB_VISIBLE_TEXT = REPO_ROOT / "evidence" / "datasets" / "evidence" / "blob_visible_text.bin"
+EXPECTED_VISIBLE_PDF_SHA256 = "9decf803a2cc4688356ebe1f6788ab577c637ec0f54cfd9dd52fae3b236435f2"
+EXPECTED_VISIBLE_BLOB_SHA256 = "58e7de08b02f1808492632ad09275ee141bab20d994651ef10e2bded8ecaf032"
+
 
 @pytest.fixture
 def integrated_client(make_client) -> TestClient:
@@ -189,3 +194,73 @@ def test_independent_pdf_content_validator_with_synthetic_text():
     assert text_result["stream_count"] == 1
     assert text_result["has_text_operators"] is True
     assert text_result["rendered_appearance"] == "rendered_content"
+
+
+def test_visible_text_blob_carve_reconstruction_and_content(integrated_client):
+    """Verify that carving blob_visible_text.bin reconstructs the exact visible-text PDF with text content."""
+    # 1. Verify fixture files and hashes
+    assert BLOB_VISIBLE_TEXT.is_file(), f"missing fixture: {BLOB_VISIBLE_TEXT}"
+    blob_bytes = BLOB_VISIBLE_TEXT.read_bytes()
+    assert len(blob_bytes) == 2560
+    assert hashlib.sha256(blob_bytes).hexdigest() == EXPECTED_VISIBLE_BLOB_SHA256
+
+    assert VISIBLE_GROUNDTRUTH_PDF.is_file(), f"missing ground truth: {VISIBLE_GROUNDTRUTH_PDF}"
+    gt_bytes = VISIBLE_GROUNDTRUTH_PDF.read_bytes()
+    assert len(gt_bytes) == 2560
+    assert hashlib.sha256(gt_bytes).hexdigest() == EXPECTED_VISIBLE_PDF_SHA256
+    assert b"TRACE FORENSIC RECONSTRUCTION TEST" in gt_bytes
+
+    # 2. Carve via API
+    r_carve = integrated_client.post(
+        "/api/sessions/carve",
+        data={"fixture_id": "visible_text_blob", "case_id": "CASE-VISIBLE-TEXT"},
+    )
+    assert r_carve.status_code == 201
+    session_id = r_carve.json()["session_id"]
+
+    # 3. Retrieve reconstruction metadata
+    r_meta = integrated_client.get(f"/api/sessions/{session_id}/reconstruction")
+    assert r_meta.status_code == 200
+    meta = r_meta.json()
+    assert meta["session_id"] == session_id
+    assert meta["status"] == "structurally_valid"
+    assert meta["complete"] is True
+    assert meta["pdf_size_bytes"] == 2560
+    assert meta["reconstructed_sha256"] == EXPECTED_VISIBLE_PDF_SHA256
+    assert meta["fragments_placed"] == 10
+
+    # Verify structural introspection for visible content
+    ps = meta.get("pdf_structure")
+    assert ps is not None
+    assert ps["version"] == "1.4"
+    assert ps["is_valid_structure"] is True
+    assert ps["page_count"] == 1
+    assert ps["mediabox"] == [0, 0, 400, 400]
+    assert ps["object_count"] == 5
+    assert ps["has_contents_stream"] is True
+    assert ps["stream_count"] == 1
+    assert ps["has_text_operators"] is True
+    assert ps["rendered_appearance"] == "rendered_content"
+    assert "active content streams" in ps["specification_status"].lower()
+
+    # 4. Download reconstructed PDF bytes
+    r_dl = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download")
+    assert r_dl.status_code == 200
+    assert r_dl.headers["content-type"] == "application/pdf"
+    assert f'filename="reconstructed_{session_id}.pdf"' in r_dl.headers["content-disposition"]
+    assert "attachment" in r_dl.headers["content-disposition"]
+
+    dl_bytes = r_dl.content
+    assert len(dl_bytes) == 2560
+    assert hashlib.sha256(dl_bytes).hexdigest() == EXPECTED_VISIBLE_PDF_SHA256
+    assert dl_bytes == gt_bytes, "Downloaded bytes must be 100% identical to ground truth visible_text.pdf"
+    assert b"TRACE FORENSIC RECONSTRUCTION TEST" in dl_bytes
+
+    # 5. Inline view endpoint
+    r_view = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/view")
+    assert r_view.status_code == 200
+    assert r_view.headers["content-type"] == "application/pdf"
+    assert f'filename="reconstructed_{session_id}.pdf"' in r_view.headers["content-disposition"]
+    assert "inline" in r_view.headers["content-disposition"]
+    assert r_view.content == gt_bytes
+
