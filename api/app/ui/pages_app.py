@@ -104,14 +104,14 @@ def investigations_list_page() -> str:
         const rec = stages.find(st => st.stage === 'recovery');
         const intel = stages.find(st => st.stage === 'intelligence');
 
-        const recTag = rec ? (rec.status === 'ok' ? '<span class="tag tag-green">OK</span>' : '<span class="tag tag-red">FAILED</span>') : '<span class="tag">&mdash;</span>';
-        const intelTag = intel ? (intel.status === 'ok' ? '<span class="tag tag-cyan">OK</span>' : '<span class="tag tag-amber">DEGRADED</span>') : '<span class="tag">&mdash;</span>';
+        const recTag = rec ? (rec.status === 'ok' ? '<span class="tag tag-green">OK</span>' : '<span class="tag tag-red">FAILED</span>') : '<span class="tag">-</span>';
+        const intelTag = intel ? (intel.status === 'ok' ? '<span class="tag tag-cyan">OK</span>' : '<span class="tag tag-amber">DEGRADED</span>') : '<span class="tag">-</span>';
 
         const statusTag = s.status === 'complete'
           ? '<span class="tag tag-green">COMPLETE</span>'
           : (s.status === 'partial' ? '<span class="tag tag-amber">PARTIAL</span>' : '<span class="tag tag-red">' + (s.status || 'ACTIVE') + '</span>');
 
-        const createdStr = s.created_utc ? s.created_utc.substring(0, 19).replace('T', ' ') + 'Z' : '&mdash;';
+        const createdStr = s.created_utc ? s.created_utc.substring(0, 19).replace('T', ' ') + 'Z' : '-';
 
         return `
           <tr>
@@ -535,7 +535,7 @@ __SUBNAV__
       document.getElementById('case-title-display').textContent = session.case_title || 'Digital Evidence Examination';
       document.getElementById('case-id-val').textContent = session.case_id || 'CASE-01';
       document.getElementById('investigator-val').textContent = session.investigator || 'Unassigned Examiner';
-      document.getElementById('created-val').textContent = session.created_utc ? session.created_utc.substring(0, 19).replace('T', ' ') + 'Z' : '&mdash;';
+      document.getElementById('created-val').textContent = session.created_utc ? session.created_utc.substring(0, 19).replace('T', ' ') + 'Z' : '-';
 
       const sTag = document.getElementById('status-tag');
       sTag.textContent = (session.status || 'ACTIVE').toUpperCase();
@@ -701,7 +701,7 @@ __SUBNAV__
       }
 
       tbody.innerHTML = fragmentsData.map((f, i) => {
-        const range = f.source_range ? `[${f.source_range[0]}..${f.source_range[1]}]` : '&mdash;';
+        const range = f.source_range ? `[${f.source_range[0]}..${f.source_range[1]}]` : '-';
         const bytes = f.size_bytes || f.byte_count || (f.source_range ? (f.source_range[1] - f.source_range[0]) : 256);
         const mime = f.detected_mime || f.mime_type || 'application/pdf';
         const entropy = f.entropy != null ? f.entropy.toFixed(3) : '4.218';
@@ -778,7 +778,7 @@ __SUBNAV__
         .replace("__SESSION_SHORT__", session_id[:8])
     )
     return wrap_page(
-        title=f"Evidence Explorer &mdash; {session_id[:8]}",
+        title=f"Evidence Explorer - {session_id[:8]}",
         content=rendered_content,
         active_route="investigations",
         extra_scripts=extra_scripts.replace("__SESSION_ID__", session_id),
@@ -914,7 +914,7 @@ __SUBNAV__
         .replace("__SESSION_SHORT__", session_id[:8])
     )
     return wrap_page(
-        title=f"Provenance &mdash; {session_id[:8]}",
+        title=f"Provenance - {session_id[:8]}",
         content=rendered_content,
         active_route="investigations",
         extra_scripts=extra_scripts.replace("__SESSION_ID__", session_id),
@@ -1036,7 +1036,7 @@ __SUBNAV__
         .replace("__SESSION_SHORT__", session_id[:8])
     )
     return wrap_page(
-        title=f"Evidence Bundle &mdash; {session_id[:8]}",
+        title=f"Evidence Bundle - {session_id[:8]}",
         content=rendered_content,
         active_route="investigations",
         extra_scripts=extra_scripts.replace("__SESSION_ID__", session_id),

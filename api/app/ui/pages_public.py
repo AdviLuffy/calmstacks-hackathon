@@ -16,7 +16,7 @@ def home_page() -> str:
         Deterministic byte reconstruction for digital evidence.
       </h1>
       <p style="font-size: 16.5px; line-height: 1.6; color: var(--text-secondary); margin-bottom: 2rem; max-width: 820px;">
-        Eliminate speculative analysis. CalmStacks TRACE reassembles raw, fragmented disk images with 100% authentic byte-level provenance, strictly validates frozen contract schemas, and grounds intelligence claims against verifiable physical media offsets.
+        Eliminate speculative analysis. TRACE reassembles raw, fragmented disk images with 100% authentic byte-level provenance, strictly validates frozen contract schemas, and grounds intelligence claims against verifiable physical media offsets.
       </p>
 
       <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2.5rem;">
@@ -134,12 +134,12 @@ def home_page() -> str:
     </div>
 
     <div style="text-align: center; padding-top: 1.5rem;">
-      <a href="/investigations" class="btn btn-primary" style="font-size: 12px; padding: 0.75rem 2rem;">Launch TRACE Forensic Workstation</a>
+      <a href="/investigations" class="btn btn-primary" style="font-size: 12px; padding: 0.75rem 2rem;">Launch TRACE Forensic Workspace</a>
     </div>
   </section>
 </main>
 """
-    return wrap_page(title="Forensic Evidence Reconstruction", content=content, active_route="home")
+    return wrap_page(title="TRACE | Digital Forensics", content=content, active_route="home")
 
 
 def product_page() -> str:
@@ -154,7 +154,7 @@ def product_page() -> str:
 
     <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">Stage 01 &mdash; Ingestion &amp; Write-Block Attestation</span>
+        <span class="panel-title">Stage 01: Ingestion &amp; Write-Block Attestation</span>
         <span class="tag tag-copper">ISO/IEC 27037</span>
       </div>
       <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 0.75rem;">
@@ -167,7 +167,7 @@ def product_page() -> str:
 
     <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">Stage 02 &mdash; Deterministic Carving &amp; Structural Profiling</span>
+        <span class="panel-title">Stage 02: Deterministic Carving &amp; Structural Profiling</span>
         <span class="tag tag-copper">P1 ENGINE</span>
       </div>
       <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 0.75rem;">
@@ -185,7 +185,7 @@ def product_page() -> str:
 
     <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">Stage 03 &mdash; Authentic Assembly &amp; Provenance Ledger</span>
+        <span class="panel-title">Stage 03: Authentic Assembly &amp; Provenance Ledger</span>
         <span class="tag tag-copper">P1 RECONSTRUCTION</span>
       </div>
       <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 0.75rem;">
@@ -200,7 +200,7 @@ def product_page() -> str:
 
     <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">Stage 04 &mdash; M0 Schema Validation &amp; Intelligence Grounding</span>
+        <span class="panel-title">Stage 04: M0 Schema Validation &amp; Intelligence Grounding</span>
         <span class="tag tag-cyan">P2 &amp; P3 SUBSYSTEMS</span>
       </div>
       <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 0.75rem;">
@@ -226,7 +226,7 @@ def about_page() -> str:
 <main class="page-main">
   <div class="container-prose">
     <div class="section-eyebrow">Engineering Principles</div>
-    <h1 class="section-title">About CalmStacks TRACE</h1>
+    <h1 class="section-title">About TRACE</h1>
     <p class="section-lead">
       TRACE was engineered to establish scientific, repeatable, and mathematically verifiable standards for digital evidence reconstruction and intelligence analysis.
     </p>
@@ -268,7 +268,7 @@ def about_page() -> str:
   </div>
 </main>
 """
-    return wrap_page(title="About", content=content, active_route="about")
+    return wrap_page(title="About TRACE", content=content, active_route="about")
 
 
 def privacy_page() -> str:
@@ -284,7 +284,7 @@ def privacy_page() -> str:
     <div class="panel">
       <h2 style="font-size: 13px; font-family: var(--font-mono); color: var(--accent-copper); margin-bottom: 0.5rem;">1. Local-First Processing Architecture (Zero Telemetry)</h2>
       <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 0.5rem;">
-        The CalmStacks TRACE Forensic Workstation operates under a strict local-first, Zero Telemetry architecture. All disk carving, profiling, fragment relationship reconstruction, and referential grounding are conducted entirely within the local host runtime.
+        The TRACE Forensic Workspace operates under a strict local-first, Zero Telemetry architecture. All disk carving, profiling, fragment relationship reconstruction, and referential grounding are conducted entirely within the local host runtime.
       </p>
       <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
         No evidentiary bitstreams, fragment hashes, or case metadata are transmitted to external servers, cloud providers, or third-party telemetry aggregators.

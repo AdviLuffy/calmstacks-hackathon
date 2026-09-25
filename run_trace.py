@@ -1,7 +1,7 @@
-"""Local application runner for CalmStacks TRACE end-to-end system.
+"""Local application runner for TRACE forensic evidence system.
 
 Starts the FastAPI server with both real P1 and P2 engines connected.
-Provides the interactive web dashboard at http://127.0.0.1:8000/
+Provides the multi-page forensic workspace at http://127.0.0.1:8000/
 """
 
 from __future__ import annotations
@@ -27,14 +27,16 @@ if __name__ == "__main__":
     import uvicorn
 
     print("=" * 70)
-    print("  CALMSTACKS TRACE — 24H HACKATHON CONSOLE")
+    print("  TRACE: FORENSIC EVIDENCE & RECONSTRUCTION WORKSPACE")
     print("=" * 70)
     print("  Subsystems integrated:")
     print("    [P1] Evidence & Reconstruction Engine (trace-evidence v0.1.0)")
     print("    [P2] M0 Frozen Contract & Intel Engine (trace-intel v1.0.0)")
-    print("    [P3] Investigator API & Web Dashboard (FastAPI v0.1.0)")
+    print("    [P3] Investigator API & Forensic Workspace (FastAPI v0.1.0)")
     print("")
-    print("  Web Dashboard:  http://127.0.0.1:8000/")
+    print("  Brand Homepage:   http://127.0.0.1:8000/")
+    print("  Investigations:   http://127.0.0.1:8000/investigations")
+    print("  New Analysis:     http://127.0.0.1:8000/investigations/new")
     print("  Interactive Docs: http://127.0.0.1:8000/docs")
     print("  Health Status:    http://127.0.0.1:8000/api/health")
     print("=" * 70)

@@ -32,11 +32,11 @@ def render_header(active_route: str = "") -> str:
 
     return f"""<header class="site-header">
   <div class="header-inner">
-    <a href="/" class="brand-anchor" title="TRACE Systems">
+    <a href="/" class="brand-anchor" title="TRACE">
       {render_brand_glyph()}
       <div class="brand-text">
-        <span class="brand-name">CalmStacks TRACE</span>
-        <span class="brand-tagline">Forensic Evidence &amp; Intelligence</span>
+        <span class="brand-name">TRACE</span>
+        <span class="brand-tagline">Digital Forensics</span>
       </div>
     </a>
 
@@ -93,7 +93,7 @@ def render_footer() -> str:
     <div class="footer-top">
       <div class="footer-brand">
         <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
-          <span style="font-family: var(--font-mono); font-weight: 700; font-size: 14px; letter-spacing: 0.1em; color: var(--text-primary);">CalmStacks TRACE</span>
+          <span style="font-family: var(--font-mono); font-weight: 700; font-size: 14px; letter-spacing: 0.1em; color: var(--text-primary);">TRACE</span>
           <span class="tag tag-copper">FORENSIC SUITE</span>
         </div>
         <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.6;">
@@ -153,12 +153,13 @@ def wrap_page(
     extra_scripts: str = "",
 ) -> str:
     """Wrap content in standard HTML5 page shell with TRACE design system."""
+    page_title = title if title.startswith("TRACE") else f"TRACE | {title}"
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{title} &mdash; CalmStacks TRACE</title>
+  <title>{page_title}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
 {COMMON_CSS}

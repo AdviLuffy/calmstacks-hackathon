@@ -23,7 +23,7 @@ def test_public_pages_and_navigation(client: TestClient):
     pages = [
         ("/", "Deterministic byte reconstruction"),
         ("/product", "The TRACE Forensic Pipeline Workflow"),
-        ("/about", "About CalmStacks TRACE"),
+        ("/about", "About TRACE"),
         ("/privacy", "Evidentiary Privacy Policy"),
         ("/terms", "Terms of Examination"),
     ]
@@ -31,7 +31,8 @@ def test_public_pages_and_navigation(client: TestClient):
     for path, expected_text in pages:
         res = client.get(path)
         assert res.status_code == 200, f"Failed on path {path}"
-        assert "CalmStacks TRACE" in res.text, f"Missing brand in {path}"
+        assert "TRACE" in res.text, f"Missing brand in {path}"
+        assert "CalmStacks" not in res.text, f"Unwanted CalmStacks brand in {path}"
         assert expected_text in res.text, f"Missing text {expected_text!r} in {path}"
 
         # Global navigation must be present on every page

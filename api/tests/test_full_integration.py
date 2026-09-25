@@ -29,11 +29,13 @@ def integrated_client(monkeypatch) -> TestClient:
 def test_dashboard_and_fixtures_served(integrated_client):
     r_root = integrated_client.get("/")
     assert r_root.status_code == 200
-    assert "CalmStacks TRACE" in r_root.text
+    assert "TRACE" in r_root.text
+    assert "CalmStacks" not in r_root.text
 
     r_dash = integrated_client.get("/dashboard")
     assert r_dash.status_code == 200
-    assert "CalmStacks TRACE" in r_dash.text
+    assert "TRACE" in r_dash.text
+    assert "CalmStacks" not in r_dash.text
 
     r_fix = integrated_client.get("/api/fixtures")
     assert r_fix.status_code == 200
