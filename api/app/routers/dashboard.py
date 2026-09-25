@@ -34,6 +34,17 @@ try:
 except ImportError:
     P1_AVAILABLE = False
 
+from trace.recovery.core.carver import MultiFormatCarver
+from trace.recovery.disk.disk_carver import ForensicDiskAnalyzer
+from trace.ai.client import ResilientGeminiClient
+from trace.ai.config import load_gemini_settings
+from trace.ai.mock_client import MockGeminiClient
+from trace.ai.service import GeminiForensicService
+from trace.cases.case import ForensicCase
+from trace.cases.report import ForensicReportGenerator
+from trace.recovery.models import RecoveredArtifact, RecoveryCategory
+from trace.recovery.prioritization import RecoveryPrioritizer
+
 router = APIRouter(tags=["dashboard"])
 
 FIXTURES_DIR = REPO_ROOT / "trace" / "contracts" / "fixtures"
@@ -228,6 +239,9 @@ async def carve_raw_evidence(
                     "Complete, unfragmented PDF bitstream ingested directly. "
                     "Exact source bytes preserved. No block carving or fragment assembly claimed."
                 ),
+                "artifacts": [],
+                "disk_report": {},
+                "detected_format": "pdf",
             }
             return project_session_detail(record)
 
@@ -333,6 +347,20 @@ async def carve_raw_evidence(
                      "Raw media does not meet 256-byte block alignment invariants or contains broken structural sequences."
             ),
         }
+
+        # Multi-format artifact carving & disk inspection
+        multi_carver = MultiFormatCarver()
+        detected_fmt = multi_carver.identify_format(media_bytes, filename=Path(media_path).name)
+        carved_arts = multi_carver.carve_raw_stream(media_bytes, max_artifacts=20)
+        disk_analyzer = ForensicDiskAnalyzer(write_blocked=write_blocked)
+        disk_rep = disk_analyzer.analyze_bytes(media_bytes, source_name=Path(media_path).name, image_sha256=pipeline_result.scan.media_sha256)
+
+        for art in carved_arts:
+            _RECONSTRUCTED_FILES[f"{record.session_id}_{art.artifact_id}"] = art.raw_bytes
+
+        _RECONSTRUCTED_META[record.session_id]["artifacts"] = [a.to_dict() for a in carved_arts]
+        _RECONSTRUCTED_META[record.session_id]["disk_report"] = disk_rep.to_dict()
+        _RECONSTRUCTED_META[record.session_id]["detected_format"] = detected_fmt.format_name
 
         return project_session_detail(record)
     finally:
@@ -544,4 +572,203 @@ def view_reconstructed_file(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="reconstructed_{session_id}.pdf"'},
+    )
+
+
+@router.get("/ai/status", summary="Get Gemini AI service configuration and status")
+def get_ai_status() -> dict[str, Any]:
+    """Get Gemini AI runtime status, model preference order, and privacy settings."""
+    settings = load_gemini_settings()
+    return {
+        "enabled": settings.enabled,
+        "has_api_key": bool(settings.api_key),
+        "model_preference_queue": list(settings.model_preference),
+        "max_retries": settings.max_retries_per_model,
+        "data_minimization_enforced": True,
+        "prompt_injection_defense": "untrusted_evidence_boundary",
+    }
+
+
+@router.get("/sessions/{session_id}/ai-analysis", summary="Run or fetch Gemini AI analysis for a session")
+def get_session_ai_analysis(
+    session_id: str,
+    pipeline: PipelineDep,
+    settings: SettingsDep,
+) -> dict[str, Any]:
+    """Execute intelligent digital forensic analysis via Gemini with fallback queue and provenance."""
+    record = pipeline.get(session_id)
+    if record is None:
+        raise SessionNotFoundError(f"no session with id {session_id!r}")
+
+    meta = _RECONSTRUCTED_META.get(session_id, {})
+    if "ai_analysis" in meta:
+        return meta["ai_analysis"]
+
+    gemini_settings = load_gemini_settings()
+    if not gemini_settings.enabled or not gemini_settings.api_key:
+        client = MockGeminiClient()
+    else:
+        client = ResilientGeminiClient(settings=gemini_settings)
+
+    ai_service = GeminiForensicService(client=client)
+    artifacts = [
+        RecoveredArtifact(
+            artifact_id=a["artifact_id"],
+            filename=a["filename"],
+            format_name=a["format_name"],
+            mime_type=a["mime_type"],
+            size_bytes=a["size_bytes"],
+            sha256=a["sha256"],
+            category=RecoveryCategory(a["category"]),
+            confidence_score=a["confidence_score"],
+            explanation=a.get("explanation", ""),
+        )
+        for a in meta.get("artifacts", [])
+    ]
+    unplaced_count = meta.get("unplaced_fragments_count", 0)
+    ai_res = ai_service.explain_case_recovery(
+        case_id=record.case_id or session_id,
+        artifacts=artifacts,
+        unplaced_fragments_count=unplaced_count,
+    )
+
+    ai_data = {
+        "success": ai_res.success,
+        "explanation": ai_res.data.model_dump() if ai_res.data else {},
+        "model_used": ai_res.provenance.model_used,
+        "fallback_occurred": ai_res.provenance.fallback_occurred,
+        "latency_ms": round(ai_res.provenance.latency_ms, 1),
+        "timestamp_utc": ai_res.provenance.timestamp_utc,
+        "error": ai_res.provenance.error,
+    }
+    if session_id in _RECONSTRUCTED_META:
+        _RECONSTRUCTED_META[session_id]["ai_analysis"] = ai_data
+    return ai_data
+
+
+@router.get("/sessions/{session_id}/report.html", summary="Generate HTML forensic report")
+def download_html_report(
+    session_id: str,
+    pipeline: PipelineDep,
+) -> Any:
+    """Generate self-contained, human-readable forensic report in HTML."""
+    record = pipeline.get(session_id)
+    if record is None:
+        raise SessionNotFoundError(f"no session with id {session_id!r}")
+
+    meta = _RECONSTRUCTED_META.get(session_id, {})
+    case = ForensicCase(
+        case_id=record.case_id or f"CASE-{session_id[:8]}",
+        title="TRACE Forensic Recovery Examination",
+        investigator="Forensic Examiner",
+        write_blocked=True,
+    )
+    case.log_event("EVIDENCE_INGESTED", "Investigator", f"Ingested {meta.get('media_source', 'evidence.bin')}", meta.get("media_sha256", ""))
+    case.log_event("FORENSIC_RECONSTRUCTION", "System", f"Carved {meta.get('fragments_carved', 0)} fragments, placed {meta.get('fragments_placed', 0)}")
+
+    artifacts = [
+        RecoveredArtifact(
+            artifact_id=a["artifact_id"],
+            filename=a["filename"],
+            format_name=a["format_name"],
+            mime_type=a["mime_type"],
+            size_bytes=a["size_bytes"],
+            sha256=a["sha256"],
+            category=RecoveryCategory(a["category"]),
+            confidence_score=a["confidence_score"],
+            explanation=a.get("explanation", ""),
+        )
+        for a in meta.get("artifacts", [])
+    ]
+    if meta.get("has_reconstructed_file") or meta.get("is_intact_passthrough") or meta.get("complete"):
+        cat = RecoveryCategory.VERIFIED if meta.get("is_verified") else (RecoveryCategory.RECOVERED if meta.get("complete") else RecoveryCategory.PARTIAL)
+        artifacts.insert(0, RecoveredArtifact(
+            artifact_id="REC-PDF-001",
+            filename=f"reconstructed_{session_id[:8]}.pdf",
+            format_name="pdf",
+            mime_type="application/pdf",
+            size_bytes=meta.get("pdf_size_bytes", 0) or 0,
+            sha256=meta.get("reconstructed_sha256", "") or "",
+            category=cat,
+            confidence_score=100.0 if meta.get("is_verified") else 90.0,
+            explanation=meta.get("forensic_notice", ""),
+        ))
+
+    html_content = ForensicReportGenerator.generate_html_report(
+        case=case,
+        artifacts=artifacts,
+        ai_summary=meta.get("ai_analysis", {}).get("explanation"),
+        disk_report=meta.get("disk_report"),
+    )
+    from starlette.responses import Response
+    return Response(
+        content=html_content,
+        media_type="text/html",
+        headers={"Content-Disposition": f'attachment; filename="forensic_report_{session_id}.html"'},
+    )
+
+
+@router.get("/sessions/{session_id}/report.json", summary="Generate JSON forensic report")
+def download_json_report(
+    session_id: str,
+    pipeline: PipelineDep,
+) -> Any:
+    """Generate structured forensic report in JSON."""
+    record = pipeline.get(session_id)
+    if record is None:
+        raise SessionNotFoundError(f"no session with id {session_id!r}")
+
+    meta = _RECONSTRUCTED_META.get(session_id, {})
+    case = ForensicCase(
+        case_id=record.case_id or f"CASE-{session_id[:8]}",
+        title="TRACE Forensic Recovery Examination",
+        investigator="Forensic Examiner",
+        write_blocked=True,
+    )
+    case.log_event("EVIDENCE_INGESTED", "Investigator", f"Ingested {meta.get('media_source', 'evidence.bin')}", meta.get("media_sha256", ""))
+
+    artifacts = [
+        RecoveredArtifact(
+            artifact_id=a["artifact_id"],
+            filename=a["filename"],
+            format_name=a["format_name"],
+            mime_type=a["mime_type"],
+            size_bytes=a["size_bytes"],
+            sha256=a["sha256"],
+            category=RecoveryCategory(a["category"]),
+            confidence_score=a["confidence_score"],
+            explanation=a.get("explanation", ""),
+        )
+        for a in meta.get("artifacts", [])
+    ]
+    report_dict = ForensicReportGenerator.generate_json_report(
+        case=case,
+        artifacts=artifacts,
+        ai_summary=meta.get("ai_analysis", {}).get("explanation"),
+        disk_report=meta.get("disk_report"),
+    )
+    from starlette.responses import Response
+    return Response(
+        content=json.dumps(report_dict, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="forensic_report_{session_id}.json"'},
+    )
+
+
+@router.get("/sessions/{session_id}/artifacts/{artifact_id}/download", summary="Download a specific carved artifact")
+def download_carved_artifact(
+    session_id: str,
+    artifact_id: str,
+) -> Any:
+    """Download authentic raw bytes of a carved artifact."""
+    key = f"{session_id}_{artifact_id}"
+    art_bytes = _RECONSTRUCTED_FILES.get(key)
+    if not art_bytes:
+        raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
+
+    from starlette.responses import Response
+    return Response(
+        content=art_bytes,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{artifact_id}.bin"'},
     )

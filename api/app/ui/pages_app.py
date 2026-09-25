@@ -500,6 +500,12 @@ __SUBNAV__
           <a href="/api/sessions/__SESSION_ID__/reconstruction/download" class="btn btn-primary" id="btn-download" download>
             &darr; Download Reconstructed PDF
           </a>
+          <a href="/api/sessions/__SESSION_ID__/report.html" class="btn btn-secondary" target="_blank">
+            &darr; Forensic Report (HTML)
+          </a>
+          <a href="/api/sessions/__SESSION_ID__/report.json" class="btn btn-ghost" download>
+            &darr; Export JSON
+          </a>
           <a href="/investigations/__SESSION_ID__/provenance" class="btn btn-secondary" id="btn-provenance">
             View Provenance Ledger &rarr;
           </a>
@@ -540,6 +546,28 @@ __SUBNAV__
             Inspect Canonical Evidence Bundle (JSON) &rarr;
           </a>
         </div>
+      </div>
+    </div>
+
+    <!-- MULTI-FORMAT CARVED ARTIFACTS PANEL -->
+    <div class="panel" id="multi-artifacts-panel" style="display: none; margin-bottom: 1.5rem;">
+      <div class="panel-header">
+        <span class="panel-title">Multi-Format Carved Artifacts &amp; Filesystem Discoveries</span>
+        <span class="tag tag-cyan" id="artifacts-count-tag">0 ARTIFACTS</span>
+      </div>
+      <div id="multi-artifacts-container">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+
+    <!-- GEMINI AI INVESTIGATION BRIEF -->
+    <div class="panel" id="ai-panel" style="margin-bottom: 1.5rem;">
+      <div class="panel-header">
+        <span class="panel-title">[AI-Assisted] Forensic Analysis Brief &amp; Intelligence Summary</span>
+        <span class="tag tag-green" id="ai-model-tag">GEMINI AI</span>
+      </div>
+      <div id="ai-container">
+        <p style="color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;">Querying intelligent AI analysis&hellip;</p>
       </div>
     </div>
 
@@ -709,6 +737,42 @@ __SUBNAV__
           } else {
             specEl.textContent = 'ISO 32000-1 compliant byte stream verified.';
           }
+        if (recon.artifacts && recon.artifacts.length > 0) {
+          const artPanel = document.getElementById('multi-artifacts-panel');
+          const artCont = document.getElementById('multi-artifacts-container');
+          const artCountTag = document.getElementById('artifacts-count-tag');
+          if (artPanel && artCont) {
+            artPanel.style.display = 'block';
+            artCountTag.textContent = `${recon.artifacts.length} ARTIFACTS`;
+            artCont.innerHTML = `
+              <table style="width:100%; border-collapse:collapse; margin-top:0.5rem; font-size:12px;">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-family:var(--font-mono); text-align:left;">
+                    <th style="padding:6px;">ID</th>
+                    <th style="padding:6px;">FILE</th>
+                    <th style="padding:6px;">FORMAT</th>
+                    <th style="padding:6px;">SIZE</th>
+                    <th style="padding:6px;">STATUS</th>
+                    <th style="padding:6px;">CONFIDENCE</th>
+                    <th style="padding:6px;">ACTION</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${recon.artifacts.map(a => `
+                    <tr style="border-bottom:1px solid var(--border-subtle);">
+                      <td style="padding:6px; font-family:var(--font-mono); font-size:11px;">${escapeHtml(a.artifact_id)}</td>
+                      <td style="padding:6px; font-weight:600;">${escapeHtml(a.filename)}</td>
+                      <td style="padding:6px;"><span class="tag tag-cyan" style="font-size:10px;">${escapeHtml((a.format_name || '').toUpperCase())}</span></td>
+                      <td style="padding:6px; font-family:var(--font-mono);">${(a.size_bytes || 0).toLocaleString()} B</td>
+                      <td style="padding:6px;"><span class="tag ${a.category === 'VERIFIED' ? 'tag-green' : (a.category === 'RECOVERED' ? 'tag-cyan' : 'tag-amber')}" style="font-size:10px;">${escapeHtml(a.category)}</span></td>
+                      <td style="padding:6px; font-weight:600;">${Math.round(a.confidence_score || 0)}%</td>
+                      <td style="padding:6px;"><a href="/api/sessions/${SESSION_ID}/artifacts/${a.artifact_id}/download" class="btn btn-ghost btn-sm" download>&darr; Download</a></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            `;
+          }
         }
       }
 
@@ -753,6 +817,36 @@ __SUBNAV__
         `;
       } else {
         findingsEl.innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">No intelligence report emitted for this session.</p>';
+      }
+
+      // 5. Fetch Gemini AI Analysis
+      try {
+        const aiRes = await fetch(`/api/sessions/${SESSION_ID}/ai-analysis`);
+        if (aiRes.ok) {
+          const ai = await aiRes.json();
+          const aiCont = document.getElementById('ai-container');
+          const aiTag = document.getElementById('ai-model-tag');
+          if (aiTag && ai.model_used) {
+            aiTag.textContent = `${ai.model_used.toUpperCase()}`;
+          }
+          if (aiCont && ai.explanation) {
+            const exp = ai.explanation;
+            aiCont.innerHTML = `
+              <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 1rem; border-radius: 2px; font-size: 13px;">
+                <p style="margin: 0 0 0.65rem 0;"><strong>Executive Summary:</strong> ${escapeHtml(exp.executive_summary || 'N/A')}</p>
+                <p style="margin: 0 0 0.65rem 0;"><strong>Artifacts Assessment:</strong> ${escapeHtml(exp.recovered_artifacts_overview || 'N/A')}</p>
+                <p style="margin: 0 0 0.65rem 0;"><strong>Missing Data:</strong> ${escapeHtml(exp.missing_data_assessment || 'N/A')}</p>
+                <p style="margin: 0 0 0.65rem 0; color: var(--accent-copper);"><strong>Evidentiary Statement:</strong> ${escapeHtml(exp.evidentiary_integrity_statement || 'N/A')}</p>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 0.75rem; border-top: 1px solid var(--border-subtle); padding-top: 0.5rem; display: flex; justify-content: space-between;">
+                  <span>Latency: ${ai.latency_ms || 0} ms | Model: ${escapeHtml(ai.model_used || 'offline_mock')}</span>
+                  <span>Data Minimization: Enforced | Prompt Injection Boundary: Active</span>
+                </div>
+              </div>
+            `;
+          }
+        }
+      } catch (e) {
+        console.error('AI analysis fetch error:', e);
       }
     } catch (err) {
       console.error(err);
