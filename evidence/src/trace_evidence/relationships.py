@@ -149,6 +149,8 @@ class RelationshipAnalysis:
     relationships: tuple[Relationship, ...]
     unresolved: tuple[UnresolvedJoin, ...]
     unplaced_fragment_ids: tuple[str, ...]
+    missing_elements: tuple[str, ...] = ()
+    conflicting_fragment_ids: tuple[str, ...] = ()
 
     @property
     def complete(self) -> bool:
@@ -370,7 +372,54 @@ def derive_relationships(profiles: Sequence[FragmentProfile]) -> RelationshipAna
     _append_section_edges(xref, trailer, startxref, eof, edges)
     _record_unknowns(profiles, edges, unresolved)
 
-    return _analysis(profiles, edges, unresolved)
+    # Detailed missing elements and conflicts detection
+    missing_elements: list[str] = []
+    conflicting_fragment_ids: list[str] = []
+
+    if len(headers) == 0:
+        missing_elements.append("missing structural fragment: header (%PDF-)")
+    elif len(headers) > 1:
+        conflicting_fragment_ids.extend(p.fragment_id for p in headers)
+
+    if not objects:
+        missing_elements.append("missing structural fragments: object definitions (obj)")
+    else:
+        numbers = [p.object_number for p in objects]
+        duplicated = _duplicated_numbers(numbers)
+        if duplicated:
+            for d in duplicated:
+                conflicting_fragment_ids.extend(p.fragment_id for p in objects if p.object_number == d)
+        missing = _missing_numbers(sorted(numbers))
+        for m in missing:
+            missing_elements.append(f"missing object: {m}")
+
+    if len(xrefs) == 0:
+        missing_elements.append("missing structural fragment: cross-reference table (xref)")
+    elif len(xrefs) > 1:
+        conflicting_fragment_ids.extend(p.fragment_id for p in xrefs)
+
+    if len(trailers) == 0:
+        missing_elements.append("missing structural fragment: trailer dictionary")
+    elif len(trailers) > 1:
+        conflicting_fragment_ids.extend(p.fragment_id for p in trailers)
+
+    if len(startxrefs) == 0:
+        missing_elements.append("missing structural fragment: startxref pointer")
+    elif len(startxrefs) > 1:
+        conflicting_fragment_ids.extend(p.fragment_id for p in startxrefs)
+
+    if len(eofs) == 0:
+        missing_elements.append("missing structural fragment: EOF terminator (%%EOF)")
+    elif len(eofs) > 1:
+        conflicting_fragment_ids.extend(p.fragment_id for p in eofs)
+
+    return _analysis(
+        profiles,
+        edges,
+        unresolved,
+        missing_elements=tuple(missing_elements),
+        conflicting_fragment_ids=tuple(sorted(set(conflicting_fragment_ids))),
+    )
 
 
 def _append_section_edges(xref, trailer, startxref, eof, edges) -> None:
@@ -421,7 +470,13 @@ def _record_unknowns(profiles, edges, unresolved) -> None:
         )
 
 
-def _analysis(profiles, edges, unresolved) -> RelationshipAnalysis:
+def _analysis(
+    profiles,
+    edges,
+    unresolved,
+    missing_elements: tuple[str, ...] = (),
+    conflicting_fragment_ids: tuple[str, ...] = (),
+) -> RelationshipAnalysis:
     placed = {
         fragment_id
         for edge in edges
@@ -445,5 +500,7 @@ def _analysis(profiles, edges, unresolved) -> RelationshipAnalysis:
         relationships=ordered_edges,
         unresolved=ordered_unresolved,
         unplaced_fragment_ids=unplaced,
+        missing_elements=missing_elements,
+        conflicting_fragment_ids=conflicting_fragment_ids,
     )
 

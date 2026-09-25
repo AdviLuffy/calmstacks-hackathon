@@ -1,0 +1,90 @@
+{
+  "block_size_bytes": 256,
+  "dataset_name": "TRACE Judge Forensic Evaluation Benchmark",
+  "description": "Standardized benchmark with 3 independently testable forensic scenarios",
+  "ground_truth": {
+    "block_count": 10,
+    "name": "judge_groundtruth.pdf",
+    "path": "groundtruth/judge_groundtruth.pdf",
+    "sha256": "d0a111d5f4eb45b2da317762d95d7a32a54eac00593ece9cc4b7c494c0367483",
+    "size_bytes": 2560,
+    "visible_text": "TRACE FORENSIC RECONSTRUCTION BENCHMARK - JUDGE EVALUATION"
+  },
+  "scenarios": {
+    "scenario_a_complete_shuffled": {
+      "description": "All 10 blocks present in shuffled order. Must reconstruct original byte-for-byte.",
+      "expected_byte_coverage": "100.0%",
+      "expected_placed_fragments": 10,
+      "expected_recovery_state": "COMPLETE AND VERIFIED",
+      "expected_total_fragments": 10,
+      "name": "judge_complete_shuffled.bin",
+      "path": "evidence/judge_complete_shuffled.bin",
+      "permutation": [
+        5,
+        2,
+        8,
+        1,
+        9,
+        3,
+        0,
+        7,
+        4,
+        6
+      ],
+      "sha256": "5bac93bbdb1ce8db5b55ecd5fc386aa748042b32afc3e79758585c32df0c6cf3",
+      "size_bytes": 2560
+    },
+    "scenario_b_missing_fragment": {
+      "description": "Evidence missing Startxref pointer and EOF terminator. Must produce authentic partial reconstruction without claiming 100% coverage.",
+      "expected_byte_coverage": "80.0%",
+      "expected_placed_fragments": 8,
+      "expected_recovery_state": "PARTIAL",
+      "expected_total_fragments": 8,
+      "missing_elements": [
+        "missing structural fragment: startxref pointer",
+        "missing structural fragment: EOF terminator (%%EOF)"
+      ],
+      "missing_original_indices": [
+        8,
+        9
+      ],
+      "name": "judge_missing_fragment.bin",
+      "path": "evidence/judge_missing_fragment.bin",
+      "permutation": [
+        5,
+        2,
+        1,
+        7,
+        3,
+        0,
+        4,
+        6
+      ],
+      "sha256": "fe9f9c14d0d0afb3c80fdea064a8fb2cb74ff9c460b62199b0f9625693a204e0",
+      "size_bytes": 2048
+    },
+    "scenario_c_corrupted_fragment": {
+      "corrupted_original_index": 1,
+      "corruption_details": "Object 1 catalog body overwritten with invalid references and payload",
+      "description": "Evidence contains damaged Object 1 block. Engine must detect corruption and refuse verification.",
+      "expected_is_verified": false,
+      "expected_recovery_state": "CORRUPTED",
+      "name": "judge_corrupted_fragment.bin",
+      "path": "evidence/judge_corrupted_fragment.bin",
+      "permutation": [
+        5,
+        2,
+        8,
+        1,
+        9,
+        3,
+        0,
+        7,
+        4,
+        6
+      ],
+      "sha256": "090848b3fa5802ffef073f2a96eb58d3e119269870b15eb19de0c76f0104710d",
+      "size_bytes": 2560
+    }
+  }
+}

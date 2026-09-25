@@ -61,6 +61,11 @@ class PipelineResult:
             STATUS_VERIFIED,
         )
 
+    @property
+    def recovery_state(self) -> str:
+        """Forensic recovery evaluation state."""
+        return self.integrity_report.recovery_state
+
 
 def run_pipeline(
     media_path: str | Path,
@@ -102,12 +107,34 @@ def run_pipeline(
     analysis = derive_relationships(profiles)
 
     # Step 6: Reconstruction and structural self-validation
-    reconstruction_res = reconstruct(
-        analysis=analysis,
-        profiles=profiles,
-        fragment_bytes=fragment_bytes,
-        fragments=scan.fragments,
-    )
+    try:
+        reconstruction_res = reconstruct(
+            analysis=analysis,
+            profiles=profiles,
+            fragment_bytes=fragment_bytes,
+            fragments=scan.fragments,
+        )
+    except FragmentCorruptionError as err:
+        from .constants import STATUS_FAILED, RECOVERY_CORRUPTED
+        from .reconstruction import StructureValidationResult
+        val = StructureValidationResult(
+            is_valid=False,
+            status=STATUS_FAILED,
+            errors=(str(err),),
+        )
+        reconstruction_res = ReconstructionResult(
+            raw_bytes=b"",
+            fragment_order=(),
+            relationships_used=(),
+            validation=val,
+            status=STATUS_FAILED,
+            warnings=(str(err),),
+            unresolved=analysis.unresolved,
+            unplaced_fragment_ids=analysis.unplaced_fragment_ids,
+            missing_elements=getattr(analysis, "missing_elements", ()),
+            corrupted_fragment_ids=(getattr(err, "fragment_id", None) or "unknown",),
+            recovery_state=RECOVERY_CORRUPTED,
+        )
 
     # Step 7: Byte provenance and integrity verification
     integrity_res = verify_integrity(

@@ -29,20 +29,21 @@ def investigations_list_page() -> str:
       <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 1rem;">
         Launch an authentic end-to-end carving or contract validation pipeline in one click using verified repository fixtures.
       </p>
-      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-        <button onclick="launchFixture('visible_text_blob')" class="btn btn-primary btn-sm" id="btn-fix-visible">
-          [RUN] Visible Text PDF Blob (blob_visible_text.bin &bull; 10 fragments &bull; Visible Content Test)
+        <button onclick="launchFixture('judge_scenario_a')" class="btn btn-primary btn-sm" id="btn-fix-judge-a">
+          [JUDGE A] Complete Shuffled (10 frags &bull; 100% Verified)
+        </button>
+        <button onclick="launchFixture('judge_scenario_b')" class="btn btn-secondary btn-sm" id="btn-fix-judge-b">
+          [JUDGE B] Missing Fragment (8 frags &bull; Partial)
+        </button>
+        <button onclick="launchFixture('judge_scenario_c')" class="btn btn-secondary btn-sm" id="btn-fix-judge-c">
+          [JUDGE C] Corrupted Fragment (10 frags &bull; Detected)
+        </button>
+        <button onclick="launchFixture('visible_text_blob')" class="btn btn-secondary btn-sm" id="btn-fix-visible">
+          [RUN] Visible Text PDF Blob (blob_visible_text.bin)
         </button>
         <button onclick="launchFixture('synthetic_blob')" class="btn btn-secondary btn-sm" id="btn-fix-blob">
-          [RUN] Blank Canvas PDF Blob (blob_1337.bin &bull; 8 fragments)
+          [RUN] Blank Canvas PDF Blob (blob_1337.bin)
         </button>
-        <button onclick="launchFixture('bundle_minimal')" class="btn btn-secondary btn-sm" id="btn-fix-min">
-          [LOAD] Contract Floor Bundle (bundle_minimal.json &bull; 0 fragments)
-        </button>
-        <button onclick="launchFixture('bundle_realistic')" class="btn btn-secondary btn-sm" id="btn-fix-real">
-          [LOAD] Multi-Fragment Bundle (bundle_realistic.json &bull; 5 fragments)
-        </button>
-      </div>
       <div id="quick-status" style="margin-top: 0.75rem; display: none;" class="notice notice-info"></div>
     </div>
 
@@ -247,6 +248,9 @@ def new_analysis_page() -> str:
         <div id="synthetic-section">
           <label class="form-label" for="fixture_id">Select Test Fixture</label>
           <select id="fixture_id" name="fixture_id" class="form-select">
+            <option value="judge_scenario_a">Judge Scenario A: Complete Shuffled Recovery (judge_complete_shuffled.bin &bull; 2,560 B &bull; 10 frags &bull; COMPLETE AND VERIFIED)</option>
+            <option value="judge_scenario_b">Judge Scenario B: Missing Fragment Partial Recovery (judge_missing_fragment.bin &bull; 2,048 B &bull; 8 frags &bull; PARTIAL)</option>
+            <option value="judge_scenario_c">Judge Scenario C: Corrupted Fragment Detection (judge_corrupted_fragment.bin &bull; 2,560 B &bull; 10 frags &bull; CORRUPTED)</option>
             <option value="scrambled_evidence_blob">Scrambled PDF Evidence (TRACE_Scrambled_Evidence.bin &bull; 1,792 bytes &bull; 7 fragments &bull; 'TRACE SCRAMBLED TEST FILE')</option>
             <option value="visible_text_blob">Visible Text Synthetic PDF Blob (blob_visible_text.bin &bull; 2,560 bytes &bull; 10 fragments &bull; 'TRACE FORENSIC RECONSTRUCTION TEST')</option>
             <option value="synthetic_blob">Deterministic Synthetic PDF Blob (blob_1337.bin &bull; 2,048 bytes &bull; 8 fragments &bull; Blank Canvas)</option>
@@ -863,10 +867,17 @@ __SUBNAV__
           }
 
           if (specEl) {
+            let extraNotice = '';
+            if (recon.missing_elements && recon.missing_elements.length > 0) {
+              extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-amber);"><strong>Missing Structural Elements:</strong> ${recon.missing_elements.map(e => `&bull; ${escapeHtml(e)}`).join(' ')}</div>`;
+            }
+            if (recon.corrupted_fragment_ids && recon.corrupted_fragment_ids.length > 0) {
+              extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-red);"><strong>Detected Integrity Corruption:</strong> Frag IDs: ${recon.corrupted_fragment_ids.join(', ')}</div>`;
+            }
             if (placed === 0) {
-              specEl.innerHTML = '<span style="color: var(--accent-red);"><strong>UNRECOGNIZED INPUT:</strong> No valid PDF header or structural markers detected in media.</span>';
+              specEl.innerHTML = '<span style="color: var(--accent-red);"><strong>UNRECOGNIZED INPUT:</strong> No valid PDF header or structural markers detected in media.</span>' + extraNotice;
             } else {
-              specEl.innerHTML = `<span style="color: var(--accent-amber);"><strong>RECONSTRUCTION PARTIAL:</strong> ${unplaced} fragment(s) remain unplaced. Structural integrity unverified.</span>`;
+              specEl.innerHTML = `<span style="color: var(--accent-amber);"><strong>RECONSTRUCTION PARTIAL:</strong> ${unplaced} fragment(s) remain unplaced. Structural integrity unverified.</span>` + extraNotice;
             }
           }
         } else {
@@ -878,6 +889,14 @@ __SUBNAV__
             coverageVal.textContent = 'NOT VERIFIED';
             coverageVal.style.color = 'var(--text-muted)';
           }
+        }
+
+        if (recon.recovery_state && stTag) {
+          stTag.textContent = recon.recovery_state.toUpperCase();
+          if (recon.recovery_state === 'COMPLETE AND VERIFIED') stTag.className = 'tag tag-green';
+          else if (recon.recovery_state === 'PARTIAL') stTag.className = 'tag tag-amber';
+          else if (recon.recovery_state === 'CORRUPTED') stTag.className = 'tag tag-red';
+          else if (recon.recovery_state === 'UNRECOVERABLE') stTag.className = 'tag tag-copper';
         }
 
         // Render multi-format carved artifacts table if available

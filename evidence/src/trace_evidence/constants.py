@@ -38,3 +38,9 @@ STATUS_VERIFIED = "verified"
 STATUS_STRUCTURALLY_VALID = "structurally_valid"
 STATUS_INCOMPLETE = "incomplete"
 STATUS_FAILED = "failed"
+
+# --- Forensic recovery states (truthful evaluation) -------------------------
+RECOVERY_COMPLETE_VERIFIED = "COMPLETE AND VERIFIED"
+RECOVERY_PARTIAL = "PARTIAL"
+RECOVERY_CORRUPTED = "CORRUPTED"
+RECOVERY_UNRECOVERABLE = "UNRECOVERABLE"

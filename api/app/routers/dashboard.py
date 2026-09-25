@@ -190,6 +190,27 @@ async def carve_raw_evidence(
                 raise HTTPException(status_code=404, detail="Visible test fixture blob_visible_text.bin not found on disk")
         media_path = blob_path
         media_bytes = blob_path.read_bytes()
+    elif fixture_id == "judge_scenario_a":
+        blob_path = EVIDENCE_DIR / "judge_complete_shuffled.bin"
+        if not blob_path.is_file():
+            alt = REPO_ROOT / "evidence" / "datasets" / "evidence" / "judge_complete_shuffled.bin"
+            blob_path = alt if alt.is_file() else blob_path
+        media_path = blob_path
+        media_bytes = blob_path.read_bytes()
+    elif fixture_id == "judge_scenario_b":
+        blob_path = EVIDENCE_DIR / "judge_missing_fragment.bin"
+        if not blob_path.is_file():
+            alt = REPO_ROOT / "evidence" / "datasets" / "evidence" / "judge_missing_fragment.bin"
+            blob_path = alt if alt.is_file() else blob_path
+        media_path = blob_path
+        media_bytes = blob_path.read_bytes()
+    elif fixture_id == "judge_scenario_c":
+        blob_path = EVIDENCE_DIR / "judge_corrupted_fragment.bin"
+        if not blob_path.is_file():
+            alt = REPO_ROOT / "evidence" / "datasets" / "evidence" / "judge_corrupted_fragment.bin"
+            blob_path = alt if alt.is_file() else blob_path
+        media_path = blob_path
+        media_bytes = blob_path.read_bytes()
     elif file is not None:
         media_bytes = await file.read()
         if not media_bytes:
@@ -262,10 +283,26 @@ async def carve_raw_evidence(
     else:
         raise InvalidInputError("provide an uploaded evidence file or a valid fixture_id")
 
+    # Caller-controlled ground-truth verification for known synthetic fixtures
+    fixture_gt_bytes: bytes | None = None
+    if fixture_id in ("judge_scenario_a", "judge_scenario_b", "judge_scenario_c"):
+        gt_path = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "judge_groundtruth.pdf"
+        if gt_path.is_file():
+            fixture_gt_bytes = gt_path.read_bytes()
+    elif fixture_id == "synthetic_blob":
+        gt_path = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "blob_1337.pdf"
+        if gt_path.is_file():
+            fixture_gt_bytes = gt_path.read_bytes()
+    elif fixture_id == "visible_text_blob":
+        gt_path = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "blob_visible_text.pdf"
+        if gt_path.is_file():
+            fixture_gt_bytes = gt_path.read_bytes()
+
     try:
         # Run authentic P1 pipeline
         pipeline_result = run_pipeline(
             media_path=media_path,
+            original_bytes=fixture_gt_bytes,
             run_id="RUN-0001",
         )
 
@@ -321,24 +358,50 @@ async def carve_raw_evidence(
             pipeline_result.reconstruction.complete
             and unplaced_count == 0
             and pipeline_result.reconstruction.validation.is_valid
+            and pipeline_result.recovery_state == "COMPLETE AND VERIFIED"
         )
-        recon_status = "structurally_valid" if is_complete else "incomplete"
+        recon_status = (
+            "structurally_valid"
+            if is_complete
+            else ("corrupted" if pipeline_result.recovery_state == "CORRUPTED" else "incomplete")
+        )
         # Never mark incomplete or unplaced reconstruction as verified
         is_verified = bool(pipeline_result.integrity_report.is_verified and is_complete)
+
+        if is_complete:
+            byte_coverage_str = "100%"
+        elif fixture_gt_bytes and len(fixture_gt_bytes) > 0:
+            byte_coverage_str = f"{(len(raw_pdf_bytes) / len(fixture_gt_bytes)) * 100:.1f}%"
+        else:
+            total_expected = len(pipeline_result.scan.fragments) + len(pipeline_result.integrity_report.missing_elements)
+            placed = len(pipeline_result.reconstruction.fragment_order)
+            byte_coverage_str = f"{(placed / max(1, total_expected)) * 100:.1f}%"
 
         safe_media_name = (
             file.filename
             if file and file.filename
             else (
-                "TRACE_Scrambled_Evidence.bin"
-                if fixture_id == "scrambled_evidence_blob"
+                "judge_complete_shuffled.bin"
+                if fixture_id == "judge_scenario_a"
                 else (
-                    "blob_visible_text.bin"
-                    if fixture_id == "visible_text_blob"
+                    "judge_missing_fragment.bin"
+                    if fixture_id == "judge_scenario_b"
                     else (
-                        "blob_1337.bin"
-                        if fixture_id == "synthetic_blob"
-                        else Path(media_path).name
+                        "judge_corrupted_fragment.bin"
+                        if fixture_id == "judge_scenario_c"
+                        else (
+                            "TRACE_Scrambled_Evidence.bin"
+                            if fixture_id == "scrambled_evidence_blob"
+                            else (
+                                "blob_visible_text.bin"
+                                if fixture_id == "visible_text_blob"
+                                else (
+                                    "blob_1337.bin"
+                                    if fixture_id == "synthetic_blob"
+                                    else Path(media_path).name
+                                )
+                            )
+                        )
                     )
                 )
             )
@@ -357,12 +420,15 @@ async def carve_raw_evidence(
             "partial_sha256": hashlib.sha256(raw_pdf_bytes).hexdigest() if raw_pdf_bytes else None,
             "is_verified": is_verified,
             "is_intact_passthrough": False,
+            "recovery_state": pipeline_result.recovery_state,
+            "missing_elements": list(pipeline_result.integrity_report.missing_elements),
+            "corrupted_fragment_ids": list(pipeline_result.integrity_report.corrupted_fragment_ids),
             "pdf_size_bytes": len(raw_pdf_bytes),
             "fragments_carved": len(pipeline_result.scan.fragments),
             "fragments_placed": len(pipeline_result.reconstruction.fragment_order),
             "unplaced_fragments_count": unplaced_count,
             "provenance": provenance_list,
-            "byte_coverage": "100%" if is_complete else f"{(len(pipeline_result.reconstruction.fragment_order)/max(1, len(pipeline_result.scan.fragments)))*100:.1f}%",
+            "byte_coverage": byte_coverage_str,
             "media_source": safe_media_name,
             "media_size_bytes": len(media_bytes),
             "media_sha256": pipeline_result.scan.media_sha256,
@@ -560,6 +626,15 @@ def get_reconstruction_details(
         "media_size_bytes": media_size,
         "media_sha256": media_sha256,
         "write_blocked": bool(media.get("write_blocked", False)),
+        "recovery_state": meta.get("recovery_state") or (
+            "COMPLETE AND VERIFIED" if is_verified else (
+                "PARTIAL" if (pdf_bytes and not is_complete) else (
+                    "UNRECOVERABLE" if not pdf_bytes else "COMPLETE AND VERIFIED"
+                )
+            )
+        ),
+        "missing_elements": meta.get("missing_elements") or [],
+        "corrupted_fragment_ids": meta.get("corrupted_fragment_ids") or [],
         "artifacts": [],
     }
 

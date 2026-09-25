@@ -173,5 +173,8 @@ def build_contract_bundle(
             "reconstructed_sha256": integrity_report.reconstructed_sha256,
             "is_verified": integrity_report.is_verified,
             "provenance_count": len(integrity_report.provenance),
+            "recovery_state": integrity_report.recovery_state,
+            "missing_elements": list(integrity_report.missing_elements),
+            "corrupted_fragment_ids": list(integrity_report.corrupted_fragment_ids),
         },
     }

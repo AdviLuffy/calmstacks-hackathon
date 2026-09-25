@@ -25,6 +25,10 @@ from .constants import (
     KIND_EOF,
     KIND_HEADER,
     LABEL_CANDIDATE,
+    RECOVERY_COMPLETE_VERIFIED,
+    RECOVERY_CORRUPTED,
+    RECOVERY_PARTIAL,
+    RECOVERY_UNRECOVERABLE,
     STATUS_FAILED,
     STATUS_INCOMPLETE,
     STATUS_STRUCTURALLY_VALID,
@@ -35,6 +39,7 @@ from .models import Fragment
 from .relationships import Relationship, RelationshipAnalysis, UnresolvedJoin
 
 __all__ = [
+    "FragmentCorruptionError",
     "StructureValidationResult",
     "ReconstructionResult",
     "walk_candidate_chain",
@@ -47,6 +52,14 @@ _PDF_EOF_TOKEN = b"%%EOF"
 _STARTXREF_RE = re.compile(rb"\bstartxref[ \t\r\n]+(\d+)\b")
 _XREF_SUBSECTION_RE = re.compile(rb"^xref[ \t\r\n]+(\d+)[ \t]+(\d+)[ \t\r\n]+")
 _XREF_ENTRY_RE = re.compile(rb"^(\d{10})[ \t]+(\d{5})[ \t]+([nf])[ \t\r\n]+")
+
+
+class FragmentCorruptionError(ValueError):
+    """Integrity mismatch or corruption detected in fragment bytes."""
+
+    def __init__(self, message: str, fragment_id: str | None = None) -> None:
+        super().__init__(message)
+        self.fragment_id = fragment_id
 
 
 @dataclass(frozen=True)
@@ -72,6 +85,9 @@ class ReconstructionResult:
     warnings: tuple[str, ...] = ()
     unresolved: tuple[UnresolvedJoin, ...] = ()
     unplaced_fragment_ids: tuple[str, ...] = ()
+    missing_elements: tuple[str, ...] = ()
+    corrupted_fragment_ids: tuple[str, ...] = ()
+    recovery_state: str = RECOVERY_UNRECOVERABLE
 
     @property
     def complete(self) -> bool:
@@ -86,6 +102,8 @@ class ReconstructionResult:
             and self.validation.is_valid
             and not self.unplaced_fragment_ids
             and not self.unresolved
+            and not self.corrupted_fragment_ids
+            and self.recovery_state != RECOVERY_CORRUPTED
         )
 
 
@@ -284,6 +302,19 @@ def validate_pdf_structure(data: bytes) -> StructureValidationResult:
                         f"object {obj_num} header not found at declared offset {offset}"
                     )
 
+    defined_objs = {num for num, _ in object_offsets}
+    root_match = re.search(rb"/Root\s+(\d+)\s+0\s+R", data)
+    if root_match:
+        root_num = int(root_match.group(1))
+        if root_num not in defined_objs:
+            errors.append(f"trailer /Root references undefined object {root_num}")
+
+    pages_match = re.search(rb"/Type\s*/Catalog[^\>]*?/Pages\s+(\d+)\s+0\s+R", data)
+    if pages_match:
+        pages_num = int(pages_match.group(1))
+        if pages_num not in defined_objs:
+            errors.append(f"catalog /Pages references undefined object {pages_num}")
+
     is_valid = len(errors) == 0
     return StructureValidationResult(
         is_valid=is_valid,
@@ -309,6 +340,9 @@ def reconstruct(
         analysis.relationships, profiles
     )
 
+    all_warnings = list(walk_warnings)
+    corrupted_ids: list[str] = []
+
     if fragments is not None:
         fragments_by_id = {f.fragment_id: f for f in fragments}
         for fid in chain:
@@ -316,23 +350,31 @@ def reconstruct(
             if frag is not None and fid in fragment_bytes:
                 block = fragment_bytes[fid]
                 if sha256_bytes(block) != frag.bytes_sha256:
-                    raise ValueError(
+                    raise FragmentCorruptionError(
                         f"content digest mismatch for fragment {fid}: expected "
-                        f"{frag.bytes_sha256}, got {sha256_bytes(block)}"
+                        f"{frag.bytes_sha256}, got {sha256_bytes(block)}",
+                        fragment_id=fid,
                     )
                 if len(block) != frag.size_bytes:
-                    raise ValueError(
+                    raise FragmentCorruptionError(
                         f"content size mismatch for fragment {fid}: expected "
-                        f"{frag.size_bytes}, got {len(block)}"
+                        f"{frag.size_bytes}, got {len(block)}",
+                        fragment_id=fid,
                     )
 
     # Honest byte assembly: never fabricate, pad, or synthesize
     raw_bytes = b"".join(fragment_bytes.get(fid, b"") for fid in chain)
 
-    all_warnings = list(walk_warnings)
     unplaced_ids = tuple(
         sorted(p.fragment_id for p in profiles if p.fragment_id not in chain)
     )
+
+    missing_elements = getattr(analysis, "missing_elements", ())
+    conflicting_ids = getattr(analysis, "conflicting_fragment_ids", ())
+    if conflicting_ids:
+        all_warnings.append(
+            f"conflicting/duplicate fragments detected: {', '.join(conflicting_ids)}"
+        )
 
     by_id = {p.fragment_id: p for p in profiles}
     chain_complete = (
@@ -344,32 +386,49 @@ def reconstruct(
         and by_id[chain[-1]].kind == KIND_EOF
     )
 
-    if not chain_complete:
+    if corrupted_ids:
+        recovery_state = RECOVERY_CORRUPTED
+        rec_status = STATUS_FAILED
+        val = StructureValidationResult(
+            is_valid=False,
+            status=STATUS_FAILED,
+            errors=tuple(all_warnings),
+        )
+    elif not chain or len(raw_bytes) == 0:
+        recovery_state = RECOVERY_UNRECOVERABLE
+        rec_status = STATUS_INCOMPLETE
+        val = StructureValidationResult(
+            is_valid=False,
+            status=STATUS_INCOMPLETE,
+            errors=tuple(all_warnings) or ("reconstruction is unrecoverable (no chain)",),
+        )
+    elif not chain_complete:
+        recovery_state = RECOVERY_PARTIAL
+        rec_status = STATUS_INCOMPLETE
         val = StructureValidationResult(
             is_valid=False,
             status=STATUS_INCOMPLETE,
             errors=tuple(all_warnings) or ("reconstruction is incomplete",),
         )
-        return ReconstructionResult(
-            raw_bytes=raw_bytes,
-            fragment_order=chain,
-            relationships_used=edges_used,
-            validation=val,
-            status=STATUS_INCOMPLETE,
-            warnings=tuple(all_warnings),
-            unresolved=analysis.unresolved,
-            unplaced_fragment_ids=unplaced_ids,
-        )
+    else:
+        val = validate_pdf_structure(raw_bytes)
+        if val.is_valid:
+            recovery_state = RECOVERY_COMPLETE_VERIFIED
+            rec_status = val.status
+        else:
+            recovery_state = RECOVERY_CORRUPTED
+            rec_status = STATUS_FAILED
 
-    # Run structural self-validation on complete byte sequence
-    val = validate_pdf_structure(raw_bytes)
     return ReconstructionResult(
         raw_bytes=raw_bytes,
         fragment_order=chain,
         relationships_used=edges_used,
         validation=val,
-        status=val.status,
+        status=rec_status,
         warnings=tuple(all_warnings),
         unresolved=analysis.unresolved,
         unplaced_fragment_ids=unplaced_ids,
+        missing_elements=missing_elements,
+        corrupted_fragment_ids=tuple(corrupted_ids),
+        recovery_state=recovery_state,
     )
