@@ -1,0 +1,71 @@
+{
+  "schema_version": "trace.evidence_bundle/1.0",
+  "bundle_id": "BND-MINIMAL-001",
+  "generated_utc": "2026-09-25T06:00:00Z",
+  "_comment": "POSITIVE fixture. Contract floor: the smallest legal bundle. One media, one artifact, no signature match, no hashes, no entropy, no fragments, no timeline. Its purpose is to force graceful degradation: a consumer must still produce a complete, honest report in which every field is MISSING or abstained.",
+  "case": {
+    "case_id": "CASE-MIN-01",
+    "title": "Minimum viable bundle (contract floor)",
+    "notes": [
+      "Metadata-only descriptor. No recovery was performed."
+    ]
+  },
+  "acquisition": {
+    "media": [
+      {
+        "media_id": "MED-01",
+        "kind": "file_copy",
+        "source_ref": "synth_min.bin",
+        "size_bytes": 4096,
+        "write_blocked": true,
+        "acquisition_method": "file_copy",
+        "image_hashes": {
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "verified": false
+        }
+      }
+    ]
+  },
+  "capabilities": {
+    "byte_recovery": false,
+    "carving_methods": [],
+    "hash_verification": false,
+    "hash_sets": [],
+    "filesystem_parsers": [],
+    "timestamp_sources": [],
+    "slack_space": false,
+    "encrypted_containers": false,
+    "limitations": [
+      "metadata-only descriptor; no byte recovery capability"
+    ]
+  },
+  "artifacts": [
+    {
+      "artifact_id": "ART-0001",
+      "origin": "cataloged",
+      "media_id": "MED-01",
+      "byte_range": {
+        "start": 0,
+        "end": 4096,
+        "size_bytes": 4096,
+        "media_id": "MED-01"
+      },
+      "signature": {
+        "matched": false,
+        "signature_id": null,
+        "footer_matched": false
+      },
+      "recovery": {
+        "method": "none",
+        "completeness": "unknown",
+        "confidence": 0,
+        "confidence_basis": "no recovery method was applied to this descriptor"
+      }
+    }
+  ],
+  "engine": {
+    "name": "trace-core",
+    "version": "0.0.1",
+    "determinism": "best_effort"
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "schema_version": "trace.evidence_bundle/2.0",
+  "bundle_id": "BND-UNSUPPORTED-001",
+  "generated_utc": "2026-09-25T08:00:00Z",
+  "_comment": "NEGATIVE fixture that tests VERSION ROUTING ONLY. Every other field is fully conformant with trace.evidence_bundle/1.0; if schema_version were '1.0' this file would validate with zero errors. A v1 validator must report exactly one violation, at /schema_version. No other deviation is permitted in this file.",
+  "_expected_reason": ["bundle_version_unsupported"],
+  "case": {
+    "case_id": "CASE-UNSUP-01",
+    "title": "Bundle declaring an unsupported major version"
+  },
+  "acquisition": {
+    "media": [
+      {
+        "media_id": "MED-01",
+        "kind": "file_copy",
+        "source_ref": "future_format.bin",
+        "size_bytes": 1048576,
+        "write_blocked": true,
+        "acquisition_method": "file_copy",
+        "image_hashes": {
+          "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "verified": true
+        }
+      }
+    ]
+  },
+  "capabilities": {
+    "byte_recovery": true,
+    "carving_methods": ["header_footer"],
+    "hash_verification": true,
+    "hash_sets": ["NSRL_RDS_SYNTHETIC_2026"],
+    "filesystem_parsers": ["ntfs"],
+    "timestamp_sources": ["mft_si"],
+    "slack_space": false,
+    "encrypted_containers": false,
+    "limitations": ["no encrypted-container analysis"]
+  },
+  "artifacts": [
+    {
+      "artifact_id": "ART-0001",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 0, "end": 4096, "size_bytes": 4096, "media_id": "MED-01" },
+      "name_hint": "sample.jpg",
+      "extension_guess": "jpg",
+      "signature": {
+        "matched": true,
+        "signature_id": "jpeg_jfif",
+        "header_hex_first16": "ffd8ffe000104a464946000101",
+        "footer_hex_last4": "ffd9",
+        "footer_matched": true
+      },
+      "hashes": {
+        "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+        "basis": "recovered_bytes",
+        "verified_against_source": true
+      },
+      "entropy": { "shannon_bits_per_byte": 7.81, "method": "byte_histogram", "window": "whole_artifact" },
+      "recovery": {
+        "method": "signature_scan",
+        "completeness": "complete",
+        "confidence": 0.9,
+        "confidence_basis": "header and footer matched with no byte gaps",
+        "byte_gaps": [],
+        "recovered_bytes": 4096
+      },
+      "timestamps": [
+        {
+          "kind": "modified",
+          "value_utc": "2026-03-14T09:12:31Z",
+          "source": "mft_si",
+          "precision": "seconds",
+          "confidence": 0.85
+        }
+      ],
+      "anomalies": []
+    }
+  ],
+  "fragments": [
+    {
+      "fragment_id": "FRG-0123456789abcdef-8192-12288",
+      "media_id": "MED-01",
+      "byte_range": { "start": 8192, "end": 12288, "size_bytes": 4096, "media_id": "MED-01" },
+      "bytes_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+      "location": "unallocated",
+      "signature_probe": { "matched": true, "marker_id": "jpeg_jfif", "offset_in_fragment": 0 },
+      "entropy": { "shannon_bits_per_byte": 7.7 },
+      "type_likelihoods": { "jpeg": 0.8, "unknown": 0.2 },
+      "reconstruction": {
+        "group_id": "RGRP-01",
+        "algorithm": "contiguous_extent",
+        "confidence": 0.8,
+        "ordering_confidence": 0.75,
+        "byte_contiguity": true,
+        "overlap_bytes": 0
+      },
+      "anomalies": []
+    }
+  ],
+  "reconstruction_groups": [
+    {
+      "group_id": "RGRP-01",
+      "artifact_id": "ART-0001",
+      "member_fragment_ids": ["FRG-0123456789abcdef-8192-12288"],
+      "algorithm": "contiguous_extent",
+      "confidence": 0.8,
+      "ordering": ["FRG-0123456789abcdef-8192-12288"],
+      "ordering_confidence": 0.75,
+      "byte_contiguity": true,
+      "overlap_bytes": 0,
+      "gaps_bytes": 0,
+      "basis": ["adjacent extents", "JFIF header present at fragment start"]
+    }
+  ],
+  "timeline_events": [
+    {
+      "event_id": "EVT-0001",
+      "ts_utc": "2026-03-14T09:12:31Z",
+      "ts_precision": "seconds",
+      "basis_path": "artifacts[ART-0001].timestamps[0].value_utc",
+      "source": "mft_si",
+      "confidence": 0.85,
+      "status": "COMPUTED"
+    }
+  ],
+  "known_file_matches": [
+    {
+      "artifact_id": "ART-0001",
+      "hashset": "NSRL_RDS_SYNTHETIC_2026",
+      "result": "no_match",
+      "basis": "sha256"
+    }
+  ],
+  "engine": {
+    "name": "trace-core",
+    "version": "0.4.1",
+    "determinism": "reproducible"
+  }
+}

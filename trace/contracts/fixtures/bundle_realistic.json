@@ -1,0 +1,711 @@
+{
+  "schema_version": "trace.evidence_bundle/1.0",
+  "bundle_id": "BND-REALISTIC-001",
+  "generated_utc": "2026-09-25T06:30:00Z",
+  "_comment": "POSITIVE fixture. Exercises every consumer capability: classification (signed and unsigned), relationship analysis (definitive, candidate, conflict, dangling reference), prioritisation (relevance, integrity, novelty, anomaly), brief gaps, explainability and grounding. Intentional semantic violations are declared in _expected_semantic_violations and must NOT be 'fixed'.",
+  "_expected_semantic_violations": [
+    "SM-6: reconstruction_groups[RGRP-03] references FRG-6f70819203142536-22024192-22026240 which is not declared in fragments (dangling reference).",
+    "SM-6: reconstruction_groups[RGRP-02] and [RGRP-03] have artifact_id null (legitimate unreconstructed group).",
+    "SM-10/SM-3: RGRP-03 declares byte_contiguity true while its member FRG-5e6f708192031425-22022144-22024192 overlaps FRG-3c4d5e6f70819203-22020096-22024192, which belongs to RGRP-02. A definitive join and an active byte conflict coexist on the same bytes; both must be surfaced.",
+    "SM-14: ART-0001 is matched with result 'unknown' while its digest is not present in the supplied hash set; ART-0008 carries the identical digest but has no match record.",
+    "GAP (intentional): ART-0002, ART-0003 and ART-0007 carry no hashes block although capabilities.hash_verification is true. These drive evidence_gaps and must not be filled in."
+  ],
+  "case": {
+    "case_id": "CASE-ATLAS-01",
+    "title": "Recovered partition image - device ATL-7",
+    "investigator": "P3",
+    "notes": [
+      "Synthetic media. Ground truth is retained outside the bundle."
+    ],
+    "investigation_profile": {
+      "objectives": [
+        "Establish an activity timeline for 2026-03-14",
+        "Identify documents and communications relevant to the stated period"
+      ],
+      "focus_categories": ["documents", "communications", "databases", "logs", "media"],
+      "excluded_families": ["executable"],
+      "critical_window": {
+        "from_utc": "2026-03-13T22:00:00Z",
+        "to_utc": "2026-03-14T12:00:00Z"
+      },
+      "known_file_policy": "deprioritize"
+    }
+  },
+  "acquisition": {
+    "media": [
+      {
+        "media_id": "MED-01",
+        "kind": "partition_image",
+        "source_ref": "ATL-7 /dev/sdb1",
+        "size_bytes": 67108864,
+        "write_blocked": true,
+        "acquisition_method": "dd",
+        "image_hashes": {
+          "sha256": "3f786850e387550fdab836ed7e6dc881de23001b1d0eaae4c9d676a1a16f1d0e",
+          "md5": "6cd3556deb0da54bca060b4c39479839",
+          "verified": true
+        },
+        "chain_of_custody": [
+          {
+            "ts_utc": "2026-09-25T05:10:00Z",
+            "actor": "P1",
+            "action": "acquired",
+            "note": "write-blocker verified before acquisition"
+          },
+          {
+            "ts_utc": "2026-09-25T05:22:00Z",
+            "actor": "P1",
+            "action": "verified",
+            "note": "sha256 matched on re-read"
+          }
+        ]
+      }
+    ]
+  },
+  "capabilities": {
+    "byte_recovery": true,
+    "carving_methods": ["header_footer", "signature_scan", "extent_based"],
+    "hash_verification": true,
+    "hash_sets": ["NSRL_RDS_SYNTHETIC_2026"],
+    "filesystem_parsers": ["ntfs", "fat32"],
+    "timestamp_sources": ["mft_si", "mft_fn", "exif_datetime", "zip_directory"],
+    "slack_space": false,
+    "encrypted_containers": false,
+    "limitations": [
+      "no AES volume decryption",
+      "no memory analysis",
+      "no slack-space analysis"
+    ]
+  },
+  "artifacts": [
+    {
+      "artifact_id": "ART-0001",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 1048576, "end": 1063936, "size_bytes": 15360, "media_id": "MED-01" },
+      "visible": false,
+      "path_hint": null,
+      "name_hint": "IMG_0231.JPG",
+      "extension_guess": "jpg",
+      "signature": {
+        "matched": true,
+        "signature_id": "jpeg_jfif",
+        "header_hex_first16": "ffd8ffe000104a464946000101",
+        "footer_hex_last4": "ffd9",
+        "footer_matched": true
+      },
+      "hashes": {
+        "sha256": "a91f2c0d4e5b6789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "md5": "0123456789abcdef0123456789abcdef",
+        "basis": "recovered_bytes",
+        "verified_against_source": true
+      },
+      "entropy": { "shannon_bits_per_byte": 7.86, "method": "byte_histogram", "window": "whole_artifact" },
+      "strings_sample": [
+        { "offset": 512, "encoding": "ascii", "length": 15, "value": "Canon EOS 200D" }
+      ],
+      "embedded_metadata": {
+        "exif": {
+          "Make": "Canon",
+          "Model": "EOS 200D",
+          "DateTimeOriginal": "2026-03-14T09:12:31",
+          "ImageWidth": 6000,
+          "ImageHeight": 4000
+        }
+      },
+      "recovery": {
+        "method": "header_footer",
+        "completeness": "complete",
+        "confidence": 0.82,
+        "confidence_basis": "header and footer matched; no byte gaps; entropy uniform for JPEG",
+        "byte_gaps": [],
+        "recovered_bytes": 15360
+      },
+      "timestamps": [
+        {
+          "kind": "exif_original",
+          "value_utc": "2026-03-14T09:12:31Z",
+          "source": "exif_datetime",
+          "precision": "seconds",
+          "confidence": 0.75,
+          "note": "camera-supplied; user-adjustable"
+        },
+        {
+          "kind": "modified",
+          "value_utc": "2026-03-14T09:12:33Z",
+          "source": "mft_si",
+          "precision": "seconds",
+          "confidence": 0.9
+        }
+      ],
+      "linked_fragment_ids": [
+        "FRG-1a2b3c4d5e6f7081-1048576-1056768",
+        "FRG-2b3c4d5e6f708192-1056768-1063936"
+      ],
+      "anomalies": []
+    },
+    {
+      "artifact_id": "ART-0002",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 2097152, "end": 2148352, "size_bytes": 51200, "media_id": "MED-01" },
+      "visible": false,
+      "path_hint": null,
+      "name_hint": "invoice_scan.jpg",
+      "extension_guess": "jpg",
+      "signature": {
+        "matched": true,
+        "signature_id": "png_header",
+        "header_hex_first16": "89504e470d0a1a0a0000000d49484452",
+        "footer_hex_last4": "49454e44",
+        "footer_matched": true
+      },
+      "entropy": { "shannon_bits_per_byte": 7.72, "method": "byte_histogram", "window": "whole_artifact" },
+      "recovery": {
+        "method": "header_footer",
+        "completeness": "complete",
+        "confidence": 0.78,
+        "confidence_basis": "PNG header and IEND matched; no byte gaps",
+        "byte_gaps": [],
+        "recovered_bytes": 51200
+      },
+      "timestamps": [
+        {
+          "kind": "modified",
+          "value_utc": "2026-03-14T09:05:00Z",
+          "source": "mft_si",
+          "precision": "seconds",
+          "confidence": 0.88
+        }
+      ],
+      "anomalies": [
+        {
+          "code": "EXT_SIGNATURE_MISMATCH",
+          "detail": "name and extension indicate .jpg but the container signature is PNG"
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-0003",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 4194304, "end": 12058624, "size_bytes": 7864320, "media_id": "MED-01" },
+      "visible": false,
+      "path_hint": null,
+      "name_hint": "contract_final.pdf",
+      "extension_guess": "pdf",
+      "signature": {
+        "matched": true,
+        "signature_id": "pdf_header",
+        "header_hex_first16": "255044462d312e370a25e2e3cfd",
+        "footer_hex_last4": "0a2525454f46",
+        "footer_matched": true
+      },
+      "entropy": { "shannon_bits_per_byte": 7.95, "method": "byte_histogram", "window": "whole_artifact" },
+      "recovery": {
+        "method": "header_footer",
+        "completeness": "truncated",
+        "confidence": 0.44,
+        "confidence_basis": "PDF header and EOF matched, but 1024 bytes are unrecoverable mid-file and the cross-reference table does not resolve",
+        "byte_gaps": [
+          { "start": 3145728, "end": 3146752, "size_bytes": 1024 }
+        ],
+        "recovered_bytes": 7863296
+      },
+      "timestamps": [
+        {
+          "kind": "modified",
+          "value_utc": "2026-03-14T08:58:11Z",
+          "source": "mft_si",
+          "precision": "seconds",
+          "confidence": 0.86
+        }
+      ],
+      "anomalies": [
+        { "code": "BYTE_GAP_PRESENT", "detail": "1024 unrecovered bytes at relative offset 3145728" }
+      ]
+    },
+    {
+      "artifact_id": "ART-0004",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 12582912, "end": 12787712, "size_bytes": 204800, "media_id": "MED-01" },
+      "visible": false,
+      "path_hint": null,
+      "name_hint": "records_2026-03.zip",
+      "extension_guess": "zip",
+      "signature": {
+        "matched": true,
+        "signature_id": "zip_local",
+        "header_hex_first16": "504b0304140000000800",
+        "footer_hex_last4": "504b0506",
+        "footer_matched": true
+      },
+      "hashes": {
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "basis": "recovered_bytes",
+        "verified_against_source": true
+      },
+      "entropy": { "shannon_bits_per_byte": 7.99, "method": "byte_histogram", "window": "whole_artifact" },
+      "recovery": {
+        "method": "header_footer",
+        "completeness": "complete",
+        "confidence": 0.88,
+        "confidence_basis": "ZIP local header and central-directory end matched; member count consistent",
+        "byte_gaps": [],
+        "recovered_bytes": 204800
+      },
+      "timestamps": [
+        {
+          "kind": "container",
+          "value_utc": "2026-03-14T08:40:12Z",
+          "source": "zip_directory",
+          "precision": "seconds",
+          "confidence": 0.8
+        }
+      ],
+      "anomalies": []
+    },
+    {
+      "artifact_id": "ART-0005",
+      "origin": "container_member",
+      "parent_artifact_id": "ART-0004",
+      "media_id": "MED-01",
+      "byte_range": { "start": 12582912, "end": 12589056, "size_bytes": 6144, "media_id": "MED-01" },
+      "visible": false,
+      "path_hint": "records/notes_2026-03-14.txt",
+      "name_hint": "notes_2026-03-14.txt",
+      "extension_guess": "txt",
+      "signature": { "matched": false, "signature_id": null, "footer_matched": false },
+      "entropy": { "shannon_bits_per_byte": 4.12, "method": "byte_histogram", "window": "whole_artifact" },
+      "strings_sample": [
+        { "offset": 0, "encoding": "utf8", "length": 47, "value": "Meeting notes - 14 March 2026 - payment schedule" },
+        { "offset": 64, "encoding": "utf8", "length": 37, "value": "vendor reconciliation pending review" }
+      ],
+      "recovery": {
+        "method": "container_extraction",
+        "completeness": "complete",
+        "confidence": 0.86,
+        "confidence_basis": "extracted from a verified ZIP container; member CRC matched",
+        "byte_gaps": [],
+        "recovered_bytes": 6144
+      },
+      "timestamps": [
+        {
+          "kind": "modified",
+          "value_utc": "2026-03-14T08:39:55Z",
+          "source": "zip_directory",
+          "precision": "seconds",
+          "confidence": 0.7,
+          "note": "container-supplied; depends on the authoring tool"
+        }
+      ],
+      "anomalies": []
+    },
+    {
+      "artifact_id": "ART-0006",
+      "origin": "container_member",
+      "parent_artifact_id": "ART-0004",
+      "media_id": "MED-01",
+      "byte_range": { "start": 12589056, "end": 12621824, "size_bytes": 32768, "media_id": "MED-01" },
+      "visible": false,
+      "path_hint": "records/ledger.db",
+      "name_hint": "ledger.db",
+      "extension_guess": "db",
+      "signature": {
+        "matched": true,
+        "signature_id": "sqlite3_header",
+        "header_hex_first16": "53514c69746520666f726d6174203300",
+        "footer_matched": false
+      },
+      "hashes": {
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "basis": "container_stream",
+        "verified_against_source": true
+      },
+      "entropy": { "shannon_bits_per_byte": 6.9, "method": "byte_histogram", "window": "whole_artifact" },
+      "recovery": {
+        "method": "container_extraction",
+        "completeness": "complete",
+        "confidence": 0.9,
+        "confidence_basis": "SQLite header on a 4096-byte page boundary; page count consistent",
+        "byte_gaps": [],
+        "recovered_bytes": 32768
+      },
+      "timestamps": [
+        {
+          "kind": "metadata_changed",
+          "value_utc": "2026-03-14T08:41:02Z",
+          "source": "mft_si",
+          "precision": "seconds",
+          "confidence": 0.84
+        }
+      ],
+      "anomalies": []
+    },
+    {
+      "artifact_id": "ART-0007",
+      "origin": "unallocated",
+      "media_id": "MED-01",
+      "byte_range": { "start": 20971520, "end": 22020096, "size_bytes": 1048576, "media_id": "MED-01" },
+      "visible": false,
+      "signature": { "matched": false, "signature_id": null, "footer_matched": false },
+      "entropy": { "shannon_bits_per_byte": 7.999, "method": "byte_histogram", "window": "whole_artifact" },
+      "recovery": {
+        "method": "signature_scan",
+        "completeness": "unknown",
+        "confidence": 0.3,
+        "confidence_basis": "no signature match; contiguous region; high entropy consistent with compressed or encrypted content",
+        "byte_gaps": [],
+        "recovered_bytes": 1048576
+      },
+      "anomalies": [
+        { "code": "HIGH_ENTROPY_UNKNOWN", "detail": "entropy 7.999 with no signature match" }
+      ]
+    },
+    {
+      "artifact_id": "ART-0008",
+      "origin": "cataloged",
+      "media_id": "MED-01",
+      "byte_range": { "start": 30408704, "end": 30424064, "size_bytes": 15360, "media_id": "MED-01" },
+      "visible": true,
+      "path_hint": "/DCIM/100CANON/IMG_0231.JPG",
+      "name_hint": "IMG_0231.JPG",
+      "extension_guess": "jpg",
+      "signature": {
+        "matched": true,
+        "signature_id": "jpeg_jfif",
+        "header_hex_first16": "ffd8ffe000104a464946000101",
+        "footer_hex_last4": "ffd9",
+        "footer_matched": true
+      },
+      "hashes": {
+        "sha256": "a91f2c0d4e5b6789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "basis": "source_bytes",
+        "verified_against_source": true
+      },
+      "entropy": { "shannon_bits_per_byte": 7.86, "method": "byte_histogram", "window": "whole_artifact" },
+      "recovery": {
+        "method": "filesystem_parser",
+        "completeness": "complete",
+        "confidence": 0.95,
+        "confidence_basis": "allocated, non-resident file record resolved",
+        "byte_gaps": [],
+        "recovered_bytes": 15360
+      },
+      "timestamps": [
+        {
+          "kind": "modified",
+          "value_utc": "2026-03-14T09:12:33Z",
+          "source": "mft_fn",
+          "precision": "seconds",
+          "confidence": 0.8
+        }
+      ],
+      "anomalies": []
+    },
+    {
+      "artifact_id": "ART-0009",
+      "origin": "cataloged",
+      "media_id": "MED-01",
+      "byte_range": { "start": 33554432, "end": 33660928, "size_bytes": 106496, "media_id": "MED-01" },
+      "visible": true,
+      "path_hint": "/Windows/System32/ntdll.dll",
+      "name_hint": "ntdll.dll",
+      "extension_guess": "dll",
+      "signature": {
+        "matched": true,
+        "signature_id": "pe_mz",
+        "header_hex_first16": "4d5a90000300000004000000ffff0000",
+        "footer_matched": false
+      },
+      "hashes": {
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "basis": "source_bytes",
+        "verified_against_source": true
+      },
+      "entropy": { "shannon_bits_per_byte": 6.45, "method": "byte_histogram", "window": "whole_artifact" },
+      "recovery": {
+        "method": "filesystem_parser",
+        "completeness": "complete",
+        "confidence": 0.96,
+        "confidence_basis": "allocated file record resolved; hash verified",
+        "byte_gaps": [],
+        "recovered_bytes": 106496
+      },
+      "timestamps": [
+        {
+          "kind": "modified",
+          "value_utc": "2025-11-02T14:20:00Z",
+          "source": "mft_si",
+          "precision": "seconds",
+          "confidence": 0.82
+        }
+      ],
+      "anomalies": []
+    }
+  ],
+  "fragments": [
+    {
+      "fragment_id": "FRG-1a2b3c4d5e6f7081-1048576-1056768",
+      "media_id": "MED-01",
+      "byte_range": { "start": 1048576, "end": 1056768, "size_bytes": 8192, "media_id": "MED-01" },
+      "bytes_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "location": "unallocated",
+      "signature_probe": { "matched": true, "marker_id": "jpeg_jfif", "offset_in_fragment": 0 },
+      "entropy": { "shannon_bits_per_byte": 7.84 },
+      "type_likelihoods": { "jpeg": 0.81, "unknown": 0.19 },
+      "reconstruction": {
+        "group_id": "RGRP-01",
+        "algorithm": "contiguous_extent",
+        "confidence": 0.84,
+        "ordering_confidence": 0.8,
+        "byte_contiguity": true,
+        "overlap_bytes": 0
+      },
+      "anomalies": []
+    },
+    {
+      "fragment_id": "FRG-2b3c4d5e6f708192-1056768-1063936",
+      "media_id": "MED-01",
+      "byte_range": { "start": 1056768, "end": 1063936, "size_bytes": 7168, "media_id": "MED-01" },
+      "bytes_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "location": "unallocated",
+      "signature_probe": { "matched": true, "marker_id": "jpeg_eoi", "offset_in_fragment": 7164 },
+      "entropy": { "shannon_bits_per_byte": 7.88 },
+      "reconstruction": {
+        "group_id": "RGRP-01",
+        "algorithm": "contiguous_extent",
+        "confidence": 0.84,
+        "ordering_confidence": 0.8,
+        "byte_contiguity": true,
+        "overlap_bytes": 0
+      },
+      "anomalies": []
+    },
+    {
+      "fragment_id": "FRG-3c4d5e6f70819203-22020096-22024192",
+      "media_id": "MED-01",
+      "byte_range": { "start": 22020096, "end": 22024192, "size_bytes": 4096, "media_id": "MED-01" },
+      "bytes_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "location": "unallocated",
+      "signature_probe": { "matched": true, "marker_id": "jpeg_sos", "offset_in_fragment": 0 },
+      "entropy": { "shannon_bits_per_byte": 7.91 },
+      "type_likelihoods": { "jpeg": 0.74, "unknown": 0.26 },
+      "reconstruction": {
+        "group_id": "RGRP-02",
+        "algorithm": "heuristic_scan",
+        "confidence": 0.52,
+        "ordering_confidence": 0.31,
+        "byte_contiguity": false,
+        "overlap_bytes": 0
+      },
+      "anomalies": []
+    },
+    {
+      "fragment_id": "FRG-4d5e6f7081920314-23068672-23072768",
+      "media_id": "MED-01",
+      "byte_range": { "start": 23068672, "end": 23072768, "size_bytes": 4096, "media_id": "MED-01" },
+      "bytes_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "location": "unallocated",
+      "signature_probe": { "matched": true, "marker_id": "jpeg_eoi", "offset_in_fragment": 4092 },
+      "entropy": { "shannon_bits_per_byte": 7.93 },
+      "type_likelihoods": { "jpeg": 0.61, "unknown": 0.39 },
+      "reconstruction": {
+        "group_id": "RGRP-02",
+        "algorithm": "heuristic_scan",
+        "confidence": 0.52,
+        "ordering_confidence": 0.31,
+        "byte_contiguity": false,
+        "overlap_bytes": 0
+      },
+      "anomalies": []
+    },
+    {
+      "fragment_id": "FRG-5e6f708192031425-22022144-22024192",
+      "media_id": "MED-01",
+      "byte_range": { "start": 22022144, "end": 22024192, "size_bytes": 2048, "media_id": "MED-01" },
+      "bytes_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "location": "unallocated",
+      "signature_probe": { "matched": false, "marker_id": null, "offset_in_fragment": 0 },
+      "entropy": { "shannon_bits_per_byte": 6.02 },
+      "type_likelihoods": { "database": 0.35, "unknown": 0.65 },
+      "anomalies": [
+        {
+          "code": "OVERLAPPING_RANGE",
+          "detail": "overlaps FRG-3c4d5e6f70819203-22020096-22024192 on the byte interval [22022144, 22024192)"
+        }
+      ]
+    }
+  ],
+  "reconstruction_groups": [
+    {
+      "group_id": "RGRP-01",
+      "artifact_id": "ART-0001",
+      "member_fragment_ids": [
+        "FRG-1a2b3c4d5e6f7081-1048576-1056768",
+        "FRG-2b3c4d5e6f708192-1056768-1063936"
+      ],
+      "algorithm": "contiguous_extent",
+      "confidence": 0.84,
+      "ordering": [
+        "FRG-1a2b3c4d5e6f7081-1048576-1056768",
+        "FRG-2b3c4d5e6f708192-1056768-1063936"
+      ],
+      "ordering_confidence": 0.8,
+      "byte_contiguity": true,
+      "overlap_bytes": 0,
+      "gaps_bytes": 0,
+      "basis": [
+        "adjacent extents",
+        "JFIF header in FRG-1a2b3c4d5e6f7081-1048576-1056768",
+        "EOI marker in FRG-2b3c4d5e6f708192-1056768-1063936",
+        "entropy continuity 7.84 to 7.88"
+      ]
+    },
+    {
+      "group_id": "RGRP-02",
+      "artifact_id": null,
+      "member_fragment_ids": [
+        "FRG-3c4d5e6f70819203-22020096-22024192",
+        "FRG-4d5e6f7081920314-23068672-23072768"
+      ],
+      "algorithm": "heuristic_scan",
+      "confidence": 0.52,
+      "ordering": [
+        "FRG-3c4d5e6f70819203-22020096-22024192",
+        "FRG-4d5e6f7081920314-23068672-23072768"
+      ],
+      "ordering_confidence": 0.31,
+      "byte_contiguity": false,
+      "overlap_bytes": 0,
+      "gaps_bytes": 1044480,
+      "basis": [
+        "SOS marker without a container header in FRG-3c4d5e6f70819203-22020096-22024192",
+        "EOI marker in FRG-4d5e6f7081920314-23068672-23072768",
+        "large offset distance between members"
+      ]
+    },
+    {
+      "group_id": "RGRP-03",
+      "artifact_id": null,
+      "member_fragment_ids": [
+        "FRG-5e6f708192031425-22022144-22024192",
+        "FRG-6f70819203142536-22024192-22026240"
+      ],
+      "algorithm": "extent_based",
+      "confidence": 0.6,
+      "ordering": [
+        "FRG-5e6f708192031425-22022144-22024192",
+        "FRG-6f70819203142536-22024192-22026240"
+      ],
+      "byte_contiguity": true,
+      "overlap_bytes": 0,
+      "gaps_bytes": 0,
+      "basis": [
+        "residual extent pointers referencing the same file record"
+      ]
+    }
+  ],
+  "timeline_events": [
+    {
+      "event_id": "EVT-0001",
+      "ts_utc": "2026-03-14T08:39:55Z",
+      "ts_precision": "seconds",
+      "basis_path": "artifacts[ART-0005].timestamps[0].value_utc",
+      "source": "zip_directory",
+      "confidence": 0.7,
+      "status": "COMPUTED"
+    },
+    {
+      "event_id": "EVT-0002",
+      "ts_utc": "2026-03-14T08:40:12Z",
+      "ts_precision": "seconds",
+      "basis_path": "artifacts[ART-0004].timestamps[0].value_utc",
+      "source": "zip_directory",
+      "confidence": 0.8,
+      "status": "COMPUTED"
+    },
+    {
+      "event_id": "EVT-0003",
+      "ts_utc": "2026-03-14T08:58:11Z",
+      "ts_precision": "seconds",
+      "basis_path": "artifacts[ART-0003].timestamps[0].value_utc",
+      "source": "mft_si",
+      "confidence": 0.86,
+      "status": "COMPUTED"
+    },
+    {
+      "event_id": "EVT-0004",
+      "ts_utc": "2026-03-14T09:05:00Z",
+      "ts_precision": "seconds",
+      "basis_path": "artifacts[ART-0002].timestamps[0].value_utc",
+      "source": "mft_si",
+      "confidence": 0.88,
+      "status": "COMPUTED"
+    },
+    {
+      "event_id": "EVT-0005",
+      "ts_utc": "2026-03-14T09:12:31Z",
+      "ts_precision": "seconds",
+      "basis_path": "artifacts[ART-0001].timestamps[0].value_utc",
+      "source": "exif_datetime",
+      "confidence": 0.75,
+      "status": "COMPUTED"
+    }
+  ],
+  "known_file_matches": [
+    {
+      "artifact_id": "ART-0009",
+      "hashset": "NSRL_RDS_SYNTHETIC_2026",
+      "result": "known",
+      "basis": "sha256"
+    },
+    {
+      "artifact_id": "ART-0006",
+      "hashset": "NSRL_RDS_SYNTHETIC_2026",
+      "result": "no_match",
+      "basis": "sha256"
+    },
+    {
+      "artifact_id": "ART-0001",
+      "hashset": "NSRL_RDS_SYNTHETIC_2026",
+      "result": "unknown",
+      "basis": "sha256"
+    }
+  ],
+  "engine": {
+    "name": "trace-core",
+    "version": "0.4.1",
+    "run_id": "RUN-0001",
+    "run_utc": "2026-09-25T06:29:40Z",
+    "determinism": "reproducible"
+  },
+  "warnings": [
+    {
+      "code": "TRUNCATED_TAIL",
+      "message": "ART-0003 contains an unrecoverable interior gap of 1024 bytes",
+      "scope": "ART-0003"
+    },
+    {
+      "code": "OVERLAPPING_RANGE",
+      "message": "FRG-5e6f708192031425-22022144-22024192 overlaps FRG-3c4d5e6f70819203-22020096-22024192",
+      "scope": "FRG-5e6f708192031425-22022144-22024192"
+    },
+    {
+      "code": "GROUP_WITHOUT_ARTIFACT",
+      "message": "RGRP-02 is a candidate reconstruction with no attributed artifact",
+      "scope": "RGRP-02"
+    },
+    {
+      "code": "DANGLING_FRAGMENT_REFERENCE",
+      "message": "RGRP-03 references a fragment that is not present in the fragments array",
+      "scope": "RGRP-03"
+    }
+  ]
+}
+
+
+
+
+

@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace.example/schemas/v1/common.schema.json",
+  "title": "TRACE shared contract definitions (v1)",
+  "description": "Shared $defs used by trace.evidence_bundle/1.0 and trace.intelligence_report/1.0. Frozen at M0. Draft 2020-12. Cross-file $refs are relative and resolve against the $id base https://trace.example/schemas/v1/ (.example is IANA-reserved, RFC 2606).",
+  "x-contract-revision": "1.0.0",
+  "x-contract-frozen-utc": "2026-09-25T00:00:00Z",
+  "x-canonicalization": "trace-cj/1.0",
+  "x-doctrine": "Deterministic computation is authoritative. AI is a narrative/reasoning layer only. Confidence is an ordinal reliability figure for a derivation, NOT a probability that a proposition is true.",
+  "$defs": {
+    "InstanceId": {
+      "type": "string",
+      "pattern": "^[A-Z]{2,6}(-[A-Z0-9]{1,12})*-\\d{2,10}$",
+      "description": "Qualified record identifier. Examples: ART-0001, MED-01, RGRP-03, EVT-0005, CASE-ATLAS-01, BND-MINIMAL-001."
+    },
+    "FragmentInstanceId": {
+      "type": "string",
+      "pattern": "^FRG-[0-9a-f]{16}-\\d{1,10}-\\d{1,10}$",
+      "description": "Fragment identifier. Frozen M0 amendment: FRG-<lowercase_hex16>-<start>-<end>. A fragment_id identifies a specific source byte occurrence over the half-open range [start, end) on the fragment's media. The embedded start and end MUST equal the fragment record's byte_range.start and byte_range.end. Identical bytes at different source ranges receive different fragment IDs."
+    },
+    "DerivedId": {
+      "type": "string",
+      "pattern": "^RPT-[0-9a-f]{12}$",
+      "description": "Hash-derived identifier. Not sequential. Used only for report_id."
+    },
+    "ActionId": {
+      "type": "string",
+      "pattern": "^ACT(-[A-Z0-9]{2,16}){1,4}$",
+      "description": "Recommended-action library code. Examples: ACT-HASH-VERIFY, ACT-MANUAL-REVIEW-RANGE."
+    },
+    "VocabCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{2,48}$",
+      "description": "Open-vocabulary SCREAMING_SNAKE code. Used for warnings[].code and anomalies[].code."
+    },
+    "VocabId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,48}$",
+      "description": "Open-vocabulary lower_snake identifier. Used for signature_id, marker_id, timestamp source, entropy method, chain-of-custody action."
+    },
+    "IsoUtc": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$",
+      "description": "UTC instant with a mandatory trailing Z. Local offsets such as +05:30 are NOT permitted."
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Lowercase hex SHA-256 digest."
+    },
+    "Md5": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "Lowercase hex MD5 digest."
+    },
+    "HexBytes": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{2})+$",
+      "description": "Even-length lowercase hex byte string."
+    },
+    "UnitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "Confidence": {
+      "$ref": "#/$defs/UnitInterval",
+      "description": "Ordinal reliability of a derivation, in [0,1]. Comparable only within the same epistemic status. NOT a probability that a proposition is true, and must never be presented or aggregated as one. Ceilings are status-dependent: INFERRED <= 0.70; OBSERVED and COMPUTED <= 1.00, additionally bounded by the monotonicity rule (a derived confidence may not exceed the minimum confidence of the evidence it cites)."
+    },
+    "ConfidenceCeilings": {
+      "type": "object",
+      "description": "Reported confidence policy. Single source of truth for the AI/authority boundary: only INFERRED carries a numeric cap; the cap exists to express a policy boundary, not a probability.",
+      "required": ["INFERRED"],
+      "properties": {
+        "INFERRED": { "const": 0.7 }
+      },
+      "additionalProperties": false
+    },
+    "EpistemicStatus": {
+      "type": "string",
+      "enum": ["OBSERVED", "COMPUTED", "INFERRED", "MISSING"],
+      "description": "OBSERVED = directly reported by the recovery engine or filesystem/container metadata (non-code synonym: KNOWN). COMPUTED = deterministically derived from OBSERVED inputs by a declared, reproducible rule. INFERRED = interpretation requiring assumptions; AI-permitted but never authoritative. MISSING = cannot be established from available evidence; requires why_missing and what_would_resolve."
+    },
+    "ProducedBy": {
+      "type": "string",
+      "enum": ["deterministic", "ai"],
+      "description": "Who authored the claim. 'ai' implies status == INFERRED (schema-enforced)."
+    },
+    "ValidatorStatus": {
+      "type": "string",
+      "enum": ["passed", "downgraded", "rejected"]
+    },
+    "DegradedReason": {
+      "type": "string",
+      "enum": [
+        "no_provider_configured",
+        "provider_not_available",
+        "provider_timeout",
+        "provider_invalid_json",
+        "provider_truncated",
+        "provider_refusal",
+        "provider_rate_limited",
+        "provider_failed_grounding",
+        "ai_budget_exhausted",
+        "bundle_version_unsupported",
+        "bundle_schema_violations",
+        "missing_optional_blocks",
+        "empty_evidence_set",
+        "validator_rejections"
+      ]
+    },
+    "UntrustedText": {
+      "type": "string",
+      "maxLength": 4096,
+      "x-untrusted": true,
+      "description": "Raw, untrusted, recovered content. C0 controls, ANSI escapes, bidi overrides and instruction-like text are LEGAL here because that is what recovered data looks like. Consumers MUST sanitise before any prompt or render and MUST NEVER treat this content as executable instructions."
+    },
+    "SanitizedText": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^[^\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]*$",
+      "x-authority": "output_must_be_clean",
+      "description": "Renderable text. C0 controls and DEL are forbidden. The input side (UntrustedText) may be dirty; the output side must be clean."
+    },
+    "EvidenceRef": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^(bundle|case|(artifacts|reconstruction_groups|timeline_events|known_file_matches)\\[[A-Z]{2,6}(-[A-Z0-9]{1,12})*-\\d{2,10}\\]|fragments\\[FRG-[0-9a-f]{16}-\\d{1,10}-\\d{1,10}\\])(\\.[a-z][a-z0-9_]*(\\[\\d+\\])?){0,2}$",
+      "description": "MINIMUM reference grammar (M0, frozen). Targets: bundle | case | artifacts[<InstanceId>] | fragments[<FragmentInstanceId>] | reconstruction_groups[<InstanceId>] | timeline_events[<InstanceId>] | known_file_matches[<artifact InstanceId>]. An optional field path of at most two segments may follow, each segment optionally carrying one numeric index (e.g. .timestamps[0]). known_file_matches is the one collection keyed by a foreign identifier (artifact_id). Every EvidenceRef must resolve to exactly one record; unresolvable refs fail grounding.",
+      "examples": [
+        "bundle",
+        "case",
+        "case.investigation_profile.focus_categories",
+        "artifacts[ART-0001]",
+        "artifacts[ART-0001].signature.matched",
+        "artifacts[ART-0005].timestamps[0].value_utc",
+        "fragments[FRG-1a2b3c4d5e6f7081-1048576-1056768].byte_range",
+        "reconstruction_groups[RGRP-01].byte_contiguity",
+        "timeline_events[EVT-0002].ts_utc",
+        "known_file_matches[ART-0009].result"
+      ]
+    },
+    "ArtifactFamily": {
+      "type": "string",
+      "enum": [
+        "image", "video", "audio", "document", "archive", "database",
+        "executable", "log", "text", "email", "cryptographic_container",
+        "filesystem_metadata", "unknown"
+      ],
+      "description": "CLOSED vocabulary, frozen for the life of 1.x."
+    },
+    "ArtifactKind": {
+      "type": "string",
+      "enum": [
+        "jpeg", "png", "gif", "bmp", "tiff", "webp",
+        "mp4", "mov", "avi", "mpeg",
+        "wav", "mp3", "aac", "flac",
+        "pdf", "rtf", "docx", "xlsx", "pptx", "odt",
+        "zip", "sevenzip", "rar", "gzip", "tar",
+        "sqlite3", "json", "csv", "xml", "yaml", "html", "txt", "markdown",
+        "eml", "msg",
+        "elf", "pe", "macho", "jar",
+        "crypto_container", "pgp_message", "luks_volume", "bitlocker_volume",
+        "filesystem_metadata", "unknown"
+      ],
+      "description": "Fine-grained kind vocabulary used only for fragment type_likelihoods keys. CLOSED, frozen for 1.x."
+    },
+    "ArtifactLabel": {
+      "type": "string",
+      "enum": [
+        "image/jpeg", "image/png", "image/gif",
+        "video/mp4",
+        "audio/mpeg",
+        "application/pdf", "application/zip", "application/x-7z",
+        "application/x-sqlite3", "application/json",
+        "text/plain", "text/csv", "text/xml",
+        "message/rfc822",
+        "application/x-executable", "application/x-elf", "application/x-pe",
+        "application/octet-stream",
+        "cryptographic_container", "filesystem_metadata", "unknown"
+      ],
+      "description": "CLOSED classification vocabulary, frozen for 1.x. Free-text labels are rejected. Abstention always maps to 'unknown'."
+    },
+    "TimestampKind": {
+      "type": "string",
+      "enum": [
+        "created", "modified", "accessed", "metadata_changed",
+        "exif_original", "exif_digitized", "container", "unknown"
+      ]
+    },
+    "TimestampPrecision": {
+      "type": "string",
+      "enum": ["nanoseconds", "milliseconds", "seconds", "minutes", "day", "unknown"]
+    },
+    "ByteRange": {
+      "type": "object",
+      "description": "Half-open byte interval [start, end) on the referenced media. Frozen M0 semantics: start >= 0; end > start; size_bytes == end - start when present. Fragment IDs embed start and end and MUST agree with this object. byte_range.start is MEDIA-ABSOLUTE; every other offset nested inside an artifact or fragment record (byte_gaps[].start, strings_sample[].offset, signature_probe.offset_in_fragment) is RELATIVE to the enclosing byte_range.start.",
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 1 },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Derived: MUST equal end - start when present. Verified by the semantic checker."
+        },
+        "media_id": { "$ref": "#/$defs/InstanceId" }
+      },
+      "additionalProperties": false
+    },
+    "ScoreComponent": {
+      "type": "object",
+      "x-authority": "deterministic",
+      "description": "One auditable term of a deterministic score. contribution MUST equal weight * value (semantic rule SM-9); the sum of contributions over a score MUST equal the reported score.",
+      "required": ["factor", "weight", "value", "contribution"],
+      "properties": {
+        "factor": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "weight": { "$ref": "#/$defs/UnitInterval" },
+        "value": { "$ref": "#/$defs/UnitInterval" },
+        "contribution": { "$ref": "#/$defs/UnitInterval" },
+        "basis_ref": {
+          "$ref": "#/$defs/EvidenceRef",
+          "description": "Resolution-checked pointer into the evidence bundle."
+        },
+        "basis_note": {
+          "$ref": "#/$defs/SanitizedText",
+          "description": "Free-text basis when no single bundle path expresses it."
+        }
+      },
+      "anyOf": [
+        { "required": ["basis_ref"] },
+        { "required": ["basis_note"] }
+      ],
+      "additionalProperties": false
+    },
+    "Warning": {
+      "type": "object",
+      "description": "Partial failures MUST be surfaced here rather than by silently omitting data. Identical shape in both documents.",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "#/$defs/VocabCode" },
+        "message": { "$ref": "#/$defs/SanitizedText" },
+        "scope": {
+          "oneOf": [
+            { "$ref": "#/$defs/InstanceId" },
+            { "$ref": "#/$defs/FragmentInstanceId" }
+          ],
+          "description": "Union of the two approved record identifier formats. Not a new ID format."
+        }
+      },
+      "additionalProperties": false
+    },
+    "Claim": {
+      "type": "object",
+      "x-authority": "mixed",
+      "description": "The claim envelope. Every printable sentence in an intelligence report exists as a Claim. Status, confidence and evidence_refs are deterministic authority; text and alternatives are narrative only.",
+      "required": [
+        "claim_id", "text", "status", "produced_by", "confidence",
+        "confidence_basis", "evidence_refs", "validator_status"
+      ],
+      "properties": {
+        "claim_id": { "$ref": "#/$defs/InstanceId" },
+        "text": { "$ref": "#/$defs/SanitizedText" },
+        "status": { "$ref": "#/$defs/EpistemicStatus" },
+        "produced_by": { "$ref": "#/$defs/ProducedBy" },
+        "confidence": { "$ref": "#/$defs/Confidence" },
+        "confidence_basis": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 512,
+          "description": "Required and never empty. This is the primary carrier of derivation reliability, not the number."
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/EvidenceRef" },
+          "description": "Always at least one ref, including for MISSING claims. Use the reserved refs 'bundle' or 'case' for whole-corpus statements."
+        },
+        "why_missing": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 512
+        },
+        "what_would_resolve": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 512
+        },
+        "alternatives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text", "confidence"],
+            "properties": {
+              "text": { "$ref": "#/$defs/SanitizedText" },
+              "confidence": { "$ref": "#/$defs/Confidence" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "assumptions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SanitizedText" }
+        },
+        "cannot_conclude": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SanitizedText" }
+        },
+        "validator_status": { "$ref": "#/$defs/ValidatorStatus" },
+        "validator_notes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SanitizedText" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "produced_by": { "const": "ai" } }, "required": ["produced_by"] },
+          "then": { "properties": { "status": { "const": "INFERRED" } } },
+          "x-invariant": "INV-SE-1: AI is never authoritative. produced_by == 'ai' implies status == INFERRED."
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["OBSERVED", "COMPUTED"] } }, "required": ["status"] },
+          "then": { "properties": { "produced_by": { "const": "deterministic" } } },
+          "x-invariant": "INV-SE-2: truth is deterministic. OBSERVED/COMPUTED imply produced_by == 'deterministic'."
+        },
+        {
+          "if": { "properties": { "status": { "const": "INFERRED" } }, "required": ["status"] },
+          "then": { "properties": { "confidence": { "maximum": 0.7 } } },
+          "x-invariant": "INV-SE-3: AI/interpretation confidence ceiling of 0.70."
+        },
+        {
+          "if": { "properties": { "status": { "const": "MISSING" } }, "required": ["status"] },
+          "then": { "required": ["why_missing", "what_would_resolve"] },
+          "x-invariant": "INV-SE-4: every gap must be actionable."
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

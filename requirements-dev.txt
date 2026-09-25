@@ -1,0 +1,15 @@
+# TRACE M0 - DEV-ONLY verification tooling.
+# NOT a runtime dependency of any TRACE module. trace/intel remains stdlib-only.
+# Install ahead of the offline venue event:
+#   py -m pip install -r requirements-dev.txt
+# Exact build pins, frozen after the first successful install and recorded here
+# so the offline venue environment is reproducible.
+jsonschema==4.26.0
+referencing==0.37.0
+# Transitive (installed automatically, listed for offline wheelhouse completeness):
+#   attrs==26.1.0, jsonschema-specifications==2025.9.1, rpds-py==2026.6.3
+
+# NOTE: no runtime dependency of the frozen M0 contract foundation may be added
+# to this file. If a TRACE module ever needs a third-party import, that is a
+# contract-level decision requiring P1/P2/P3 agreement.
+

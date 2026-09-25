@@ -1,0 +1,185 @@
+{
+  "schema_version": "trace.evidence_bundle/1.0",
+  "bundle_id": "BND-BROKEN-001",
+  "generated_utc": "2026-09-25T07:30:00Z",
+  "_comment": "NEGATIVE fixture. Valid JSON, deliberately INVALID against trace.evidence_bundle/1.0. schema_version is deliberately NOT one of the violations: version routing is tested exclusively by bundle_unsupported_version.json. Never use this file as a data source.",
+  "_expected_violations": [
+    { "path": "", "validator": "required", "mentions": "engine" },
+    { "path": "/acquisition/media/0/write_blocked", "validator": "type" },
+    { "path": "/artifacts/0/origin", "validator": "enum" },
+    { "path": "/artifacts/1/artifact_id", "validator": "pattern" },
+    { "path": "/artifacts/2/recovery/confidence", "validator": "maximum" },
+    { "path": "/artifacts/2/recovery/method", "validator": "enum" },
+    { "path": "/artifacts/3/timestamps/0/value_utc", "validator": "pattern" },
+    { "path": "/artifacts/4/hashes/sha256", "validator": "pattern" },
+    { "path": "/artifacts/5/signature/signature_id", "validator": "type" },
+    { "path": "/artifacts/7/byte_range/start", "validator": "minimum" },
+    { "path": "/capabilities/carving_methods", "validator": "type" },
+    { "path": "/capabilities", "validator": "additionalProperties", "mentions": "unknown_flag" },
+    { "path": "/fragments/0/fragment_id", "validator": "pattern" }
+  ],
+  "_expected_semantic_violations": [
+    "SM-4: artifact_id ART-0001 appears twice (artifacts[0] and artifacts[6]). JSON Schema cannot express cross-item uniqueness.",
+    "SM-5: artifacts[6].byte_range [2000000, 2001024) exceeds media size_bytes 1048576.",
+    "Fragment ID amendment: fragments[0].fragment_id FRG-0001 does not encode its byte range [262144, 266240) and does not match FragmentInstanceId. The pattern violation is schema-caught; the ID/range disagreement is the semantic half."
+  ],
+  "case": {
+    "case_id": "CASE-BROKEN-01",
+    "title": "Deliberately invalid bundle (negative fixture)"
+  },
+  "acquisition": {
+    "media": [
+      {
+        "media_id": "MED-01",
+        "kind": "file_copy",
+        "source_ref": "broken.bin",
+        "size_bytes": 1048576,
+        "write_blocked": "yes",
+        "acquisition_method": "file_copy"
+      }
+    ]
+  },
+  "capabilities": {
+    "byte_recovery": true,
+    "carving_methods": "header_footer",
+    "hash_verification": true,
+    "hash_sets": [],
+    "filesystem_parsers": [],
+    "timestamp_sources": [],
+    "slack_space": false,
+    "encrypted_containers": false,
+    "limitations": ["synthetic negative fixture"],
+    "unknown_flag": true
+  },
+  "artifacts": [
+    {
+      "artifact_id": "ART-0001",
+      "origin": "carved",
+      "media_id": "MED-01",
+      "byte_range": { "start": 0, "end": 4096, "size_bytes": 4096, "media_id": "MED-01" },
+      "signature": { "matched": false, "signature_id": null, "footer_matched": false },
+      "recovery": {
+        "method": "none",
+        "completeness": "unknown",
+        "confidence": 0,
+        "confidence_basis": "not applicable"
+      }
+    },
+    {
+      "artifact_id": "artifact-two",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 0, "end": 512, "size_bytes": 512, "media_id": "MED-01" },
+      "signature": { "matched": false, "signature_id": null, "footer_matched": false },
+      "recovery": {
+        "method": "none",
+        "completeness": "unknown",
+        "confidence": 0.1,
+        "confidence_basis": "lowercase identifier must be rejected"
+      }
+    },
+    {
+      "artifact_id": "ART-0003",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 512, "end": 1024, "size_bytes": 512, "media_id": "MED-01" },
+      "signature": { "matched": false, "signature_id": null, "footer_matched": false },
+      "recovery": {
+        "method": "magic_carve",
+        "completeness": "unknown",
+        "confidence": 1.5,
+        "confidence_basis": "confidence out of range and method outside the closed vocabulary"
+      }
+    },
+    {
+      "artifact_id": "ART-0004",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 1024, "end": 1536, "size_bytes": 512, "media_id": "MED-01" },
+      "signature": { "matched": false, "signature_id": null, "footer_matched": false },
+      "recovery": {
+        "method": "none",
+        "completeness": "unknown",
+        "confidence": 0.2,
+        "confidence_basis": "local time offset is not permitted"
+      },
+      "timestamps": [
+        {
+          "kind": "modified",
+          "value_utc": "2026-03-14T09:12:33+05:30",
+          "source": "mft_si",
+          "precision": "seconds",
+          "confidence": 0.5
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-0005",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 1536, "end": 2048, "size_bytes": 512, "media_id": "MED-01" },
+      "signature": { "matched": false, "signature_id": null, "footer_matched": false },
+      "hashes": {
+        "sha256": "ZZZZ-not-hex",
+        "basis": "recovered_bytes",
+        "verified_against_source": false
+      },
+      "recovery": {
+        "method": "none",
+        "completeness": "unknown",
+        "confidence": 0.2,
+        "confidence_basis": "digest is not lowercase hex"
+      }
+    },
+    {
+      "artifact_id": "ART-0006",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 2048, "end": 2560, "size_bytes": 512, "media_id": "MED-01" },
+      "signature": { "matched": true, "signature_id": null, "footer_matched": true },
+      "recovery": {
+        "method": "none",
+        "completeness": "unknown",
+        "confidence": 0.2,
+        "confidence_basis": "matched true requires a named signature"
+      }
+    },
+    {
+      "artifact_id": "ART-0001",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": 2000000, "end": 2001024, "size_bytes": 1024, "media_id": "MED-01" },
+      "signature": { "matched": false, "signature_id": null, "footer_matched": false },
+      "recovery": {
+        "method": "none",
+        "completeness": "unknown",
+        "confidence": 0.2,
+        "confidence_basis": "duplicate identifier and range beyond media size"
+      }
+    },
+    {
+      "artifact_id": "ART-0008",
+      "origin": "recovered",
+      "media_id": "MED-01",
+      "byte_range": { "start": -100, "end": 4096, "size_bytes": 4196, "media_id": "MED-01" },
+      "signature": { "matched": false, "signature_id": null, "footer_matched": false },
+      "recovery": {
+        "method": "none",
+        "completeness": "unknown",
+        "confidence": 0.2,
+        "confidence_basis": "negative start offset"
+      }
+    }
+  ],
+  "fragments": [
+    {
+      "fragment_id": "FRG-0001",
+      "media_id": "MED-01",
+      "byte_range": { "start": 262144, "end": 266240, "size_bytes": 4096, "media_id": "MED-01" },
+      "location": "unallocated",
+      "signature_probe": { "matched": false, "marker_id": null, "offset_in_fragment": 0 }
+    }
+  ]
+}
+
+
