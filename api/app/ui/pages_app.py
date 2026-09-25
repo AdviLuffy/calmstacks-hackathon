@@ -29,14 +29,17 @@ def investigations_list_page() -> str:
       <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 1rem;">
         Launch an authentic end-to-end carving or contract validation pipeline in one click using verified repository fixtures.
       </p>
-        <button onclick="launchFixture('judge_scenario_a')" class="btn btn-primary btn-sm" id="btn-fix-judge-a">
-          [JUDGE A] Complete Shuffled (10 frags &bull; 100% Verified)
+        <button onclick="launchFixture('visible_text_missing')" class="btn btn-primary btn-sm" id="btn-fix-missing-repair" style="background: rgba(168, 85, 247, 0.2); border-color: rgba(168, 85, 247, 0.6); color: #e9d5ff;">
+          [SYNTHETIC REPAIR] Missing Fragment &rarr; Openable PDF (8 frags)
+        </button>
+        <button onclick="launchFixture('judge_scenario_a')" class="btn btn-secondary btn-sm" id="btn-fix-judge-a">
+          [JUDGE A] Complete (10 frags &bull; 100% Verified)
         </button>
         <button onclick="launchFixture('judge_scenario_b')" class="btn btn-secondary btn-sm" id="btn-fix-judge-b">
-          [JUDGE B] Missing Fragment (8 frags &bull; Partial)
+          [JUDGE B] Missing (8 frags &bull; Partial)
         </button>
         <button onclick="launchFixture('judge_scenario_c')" class="btn btn-secondary btn-sm" id="btn-fix-judge-c">
-          [JUDGE C] Corrupted Fragment (10 frags &bull; Detected)
+          [JUDGE C] Corrupted (10 frags &bull; Detected)
         </button>
         <button onclick="launchFixture('visible_text_blob')" class="btn btn-secondary btn-sm" id="btn-fix-visible">
           [RUN] Visible Text PDF Blob (blob_visible_text.bin)
@@ -248,6 +251,7 @@ def new_analysis_page() -> str:
         <div id="synthetic-section">
           <label class="form-label" for="fixture_id">Select Test Fixture</label>
           <select id="fixture_id" name="fixture_id" class="form-select">
+            <option value="visible_text_missing">Missing Fragments Synthetic Test (blob_visible_text_missing.bin &bull; 2,048 B &bull; 8 frags &bull; Synthetic Repair Demo)</option>
             <option value="judge_scenario_a">Judge Scenario A: Complete Shuffled Recovery (judge_complete_shuffled.bin &bull; 2,560 B &bull; 10 frags &bull; COMPLETE AND VERIFIED)</option>
             <option value="judge_scenario_b">Judge Scenario B: Missing Fragment Partial Recovery (judge_missing_fragment.bin &bull; 2,048 B &bull; 8 frags &bull; PARTIAL)</option>
             <option value="judge_scenario_c">Judge Scenario C: Corrupted Fragment Detection (judge_corrupted_fragment.bin &bull; 2,560 B &bull; 10 frags &bull; CORRUPTED)</option>
@@ -893,10 +897,54 @@ __SUBNAV__
 
         if (recon.recovery_state && stTag) {
           stTag.textContent = recon.recovery_state.toUpperCase();
-          if (recon.recovery_state === 'COMPLETE AND VERIFIED') stTag.className = 'tag tag-green';
-          else if (recon.recovery_state === 'PARTIAL') stTag.className = 'tag tag-amber';
-          else if (recon.recovery_state === 'CORRUPTED') stTag.className = 'tag tag-red';
-          else if (recon.recovery_state === 'UNRECOVERABLE') stTag.className = 'tag tag-copper';
+          if (recon.recovery_state.includes('ORIGINAL BYTES RECOVERED AND VERIFIED') || recon.recovery_state === 'COMPLETE AND VERIFIED') {
+            stTag.className = 'tag tag-green';
+          } else if (recon.recovery_state.includes('SYNTHETIC REPAIR')) {
+            stTag.className = 'tag';
+            stTag.style.background = 'rgba(168, 85, 247, 0.18)';
+            stTag.style.color = '#e9d5ff';
+            stTag.style.border = '1px solid rgba(168, 85, 247, 0.5)';
+          } else if (recon.recovery_state.includes('PARTIAL')) {
+            stTag.className = 'tag tag-amber';
+          } else if (recon.recovery_state.includes('INVALID') || recon.recovery_state === 'CORRUPTED') {
+            stTag.className = 'tag tag-red';
+          } else {
+            stTag.className = 'tag tag-copper';
+          }
+        }
+
+        // If synthetic repair produced an openable PDF, provide prominent access and honest provenance
+        if (recon.has_repaired_file && !recon.complete) {
+          if (dlBtn) {
+            dlBtn.innerHTML = '&darr; Download Repaired PDF (Openable)';
+            dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired`);
+            dlBtn.className = 'btn btn-primary';
+            dlBtn.style.opacity = '1';
+            dlBtn.style.cursor = 'pointer';
+          }
+          if (viewBtn) {
+            viewBtn.style.display = 'inline-flex';
+            viewBtn.innerHTML = '&#128065; View Repaired PDF';
+            viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view?mode=repaired`);
+          }
+          if (specEl) {
+            const txt = recon.repaired_extracted_text ? ` &bull; Verified Text: "${escapeHtml(recon.repaired_extracted_text)}"` : '';
+            specEl.innerHTML = `
+              <div style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 3px; padding: 0.85rem; margin-top: 0.5rem;">
+                <div style="font-weight: 700; color: #c084fc; font-family: var(--font-mono); margin-bottom: 0.35rem; font-size: 12.5px;">
+                  [SYNTHETIC REPAIR] OPENABLE PDF SYNTHESIZED (${recon.repaired_pdf_size || 'N/A'} bytes &bull; ${recon.repaired_page_count || 1} page${txt})
+                </div>
+                <div style="font-size: 11.5px; color: var(--text-secondary); line-height: 1.5;">
+                  Original recovered objects preserved without alteration. Missing startxref pointer and %%EOF marker synthesized to make PDF openable in Adobe Acrobat and standard readers.<br>
+                  <span style="color: var(--text-muted); font-size: 11px;">[Forensic Ledger] Recovered evidence: ${recon.fragments_placed || 0} fragments (${recon.pdf_size_bytes} B) &bull; Synthesized syntax: ${recon.synthesized_bytes_count || 0} B &bull; Byte-identical to ground truth: FALSE.</span>
+                </div>
+                <div style="margin-top: 0.6rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                  <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 0.25rem 0.65rem;">&darr; Download Openable PDF</a>
+                  <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=raw" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 0.25rem 0.65rem;">&darr; Download Raw Partial Bytes (${recon.pdf_size_bytes} B)</a>
+                </div>
+              </div>
+            `;
+          }
         }
 
         // Render multi-format carved artifacts table if available

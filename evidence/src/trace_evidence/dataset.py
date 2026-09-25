@@ -52,6 +52,7 @@ __all__ = [
     "VISIBLE_DEFAULT_SEED",
     "build_visible_text_pdf",
     "write_visible_dataset",
+    "write_visible_missing_dataset",
 ]
 
 VISIBLE_OBJECT_COUNT = 5
@@ -383,6 +384,102 @@ def write_visible_dataset(
 
     pdf_path.write_bytes(pdf)
     blob_path.write_bytes(blob)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    return {
+        "dataset_dir": str(out),
+        "pdf_path": str(pdf_path),
+        "blob_path": str(blob_path),
+        "manifest_path": str(manifest_path),
+        "manifest": manifest,
+    }
+
+
+def write_visible_missing_dataset(
+    out_dir: str | Path,
+    seed: int = VISIBLE_DEFAULT_SEED,
+    text: str = VISIBLE_TEXT_CONTENT,
+) -> dict:
+    """Write the missing-fragment evidence blob derived directly from the working synthetic fixture.
+
+    Removes fragments 8 (startxref) and 9 (eof) from the 10-fragment visible text fixture,
+    leaving 8 blocks (2048 bytes) covering Header, Objects 1-5, Xref, and Trailer.
+    """
+    out = Path(out_dir)
+    groundtruth_dir = out / "groundtruth"
+    evidence_dir = out / "evidence"
+    groundtruth_dir.mkdir(parents=True, exist_ok=True)
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+
+    pdf = build_visible_text_pdf(text)
+    full_blob, permutation = shuffle_fragments(pdf, seed)
+    blocks = split_blocks(pdf)
+
+    # Filter out blocks 8 (startxref) and 9 (eof)
+    missing_indices = {8, 9}
+    missing_permutation = [idx for idx in permutation if idx not in missing_indices]
+    missing_blob = b"".join(blocks[idx] for idx in missing_permutation)
+
+    kinds = (
+        [KIND_HEADER]
+        + [KIND_OBJECT] * VISIBLE_OBJECT_COUNT
+        + [KIND_XREF, KIND_TRAILER, KIND_STARTXREF, KIND_EOF]
+    )
+
+    fragments = []
+    for position, original_index in enumerate(missing_permutation):
+        digest = sha256_bytes(blocks[original_index])
+        fragments.append(
+            {
+                "fragment_id": content_id("frag", digest),
+                "blob_offset": position * BLOCK_SIZE,
+                "length": BLOCK_SIZE,
+                "sha256": digest,
+                "source_offset": original_index * BLOCK_SIZE,
+                "original_index": original_index,
+                "kind": kinds[original_index],
+                "object_number": (
+                    original_index if 1 <= original_index <= VISIBLE_OBJECT_COUNT else None
+                ),
+            }
+        )
+
+    manifest = {
+        "dataset_format_version": DATASET_FORMAT_VERSION,
+        "generator": {"name": "trace-evidence", "version": __version__},
+        "seed": seed,
+        "block_size": BLOCK_SIZE,
+        "fragment_count": len(missing_permutation),
+        "missing_fragment_count": len(missing_indices),
+        "missing_original_indices": sorted(list(missing_indices)),
+        "text_content": text,
+        "original": {
+            "name": "visible_text.pdf",
+            "path": "groundtruth/visible_text.pdf",
+            "size": len(pdf),
+            "sha256": sha256_bytes(pdf),
+            "block_count": len(blocks),
+        },
+        "blob": {
+            "name": "blob_visible_text_missing.bin",
+            "path": "evidence/blob_visible_text_missing.bin",
+            "size": len(missing_blob),
+            "sha256": sha256_bytes(missing_blob),
+        },
+        "permutation": list(missing_permutation),
+        "fragments": fragments,
+    }
+
+    pdf_path = groundtruth_dir / manifest["original"]["name"]
+    blob_path = evidence_dir / manifest["blob"]["name"]
+    manifest_path = out / "manifest_visible_text_missing.json"
+
+    pdf_path.write_bytes(pdf)
+    blob_path.write_bytes(missing_blob)
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

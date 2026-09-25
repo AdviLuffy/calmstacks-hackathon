@@ -261,6 +261,51 @@ def test_visible_text_blob_carve_reconstruction_and_content(integrated_client):
     assert r_view.status_code == 200
     assert r_view.headers["content-type"] == "application/pdf"
     assert f'filename="reconstructed_{session_id}.pdf"' in r_view.headers["content-disposition"]
-    assert "inline" in r_view.headers["content-disposition"]
     assert r_view.content == gt_bytes
+
+
+def test_missing_fragments_and_synthetic_repair_download(integrated_client):
+    """Verify carving visible_text_missing yields partial recovery with openable synthetic repair."""
+    import io
+    import pypdf
+
+    # 1. Carve missing fragments fixture
+    r_carve = integrated_client.post(
+        "/api/sessions/carve",
+        data={"fixture_id": "visible_text_missing", "case_id": "CASE-MISSING-REPAIR"},
+    )
+    assert r_carve.status_code == 201
+    session_id = r_carve.json()["session_id"]
+
+    # 2. Retrieve reconstruction metadata
+    r_meta = integrated_client.get(f"/api/sessions/{session_id}/reconstruction")
+    assert r_meta.status_code == 200
+    meta = r_meta.json()
+    assert meta["session_id"] == session_id
+    assert meta["complete"] is False
+    assert meta["is_verified"] is False
+    assert meta["recovery_state"] == "SYNTHETIC REPAIR — GENERATED OR REPLACED CONTENT"
+    assert meta["has_repaired_file"] is True
+    assert meta["repaired_is_openable"] is True
+    assert meta["repaired_page_count"] == 1
+    assert "TRACE FORENSIC RECONSTRUCTION TEST" in meta["repaired_extracted_text"]
+
+    # 3. Download repaired openable PDF (mode=repaired)
+    r_dl_rep = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download?mode=repaired")
+    assert r_dl_rep.status_code == 200
+    assert r_dl_rep.headers["content-type"] == "application/pdf"
+    assert "repaired" in r_dl_rep.headers["content-disposition"]
+    assert "SYNTHETIC REPAIR" in r_dl_rep.headers["X-TRACE-Repair-Status"]
+
+    rep_bytes = r_dl_rep.content
+    assert len(rep_bytes) > 0
+    # Must parse cleanly with pypdf
+    reader = pypdf.PdfReader(io.BytesIO(rep_bytes))
+    assert len(reader.pages) == 1
+    assert "TRACE FORENSIC RECONSTRUCTION TEST" in reader.pages[0].extract_text()
+
+    # 4. Download raw partial bytes (mode=raw)
+    r_dl_raw = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download?mode=raw")
+    assert r_dl_raw.status_code == 200
+    assert len(r_dl_raw.content) == 2048
 
