@@ -37,7 +37,23 @@ from app.routers import meta as meta_routes
 from app.routers import evidence as evidence_routes
 from app.routers import sessions as session_routes
 from app.routers import dashboard as dashboard_routes
-from app.routers.dashboard_ui import DASHBOARD_HTML, FAVICON_SVG, PRIVACY_HTML, TERMS_HTML
+from app.routers.dashboard_ui import (
+    DASHBOARD_HTML,
+    FAVICON_SVG,
+    PRIVACY_HTML,
+    TERMS_HTML,
+    about_page,
+    bundle_page,
+    evidence_explorer_page,
+    home_page,
+    investigation_overview_page,
+    investigations_list_page,
+    new_analysis_page,
+    privacy_page,
+    product_page,
+    provenance_page,
+    terms_page,
+)
 from starlette.responses import HTMLResponse, Response
 from app.schemas.common import api_error_payload, project_warning
 from app.services.interfaces import SessionStore, StageWarning
@@ -173,19 +189,55 @@ def create_app(
     application.include_router(evidence_routes.router, prefix=API_PREFIX)
     application.include_router(dashboard_routes.router, prefix=API_PREFIX)
 
+    # Public brand routes
     @application.get("/", response_class=HTMLResponse, include_in_schema=False)
-    @application.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
-    def serve_dashboard() -> HTMLResponse:
-        return HTMLResponse(content=DASHBOARD_HTML)
+    def serve_home() -> HTMLResponse:
+        return HTMLResponse(content=home_page())
+
+    @application.get("/product", response_class=HTMLResponse, include_in_schema=False)
+    def serve_product() -> HTMLResponse:
+        return HTMLResponse(content=product_page())
+
+    @application.get("/about", response_class=HTMLResponse, include_in_schema=False)
+    def serve_about() -> HTMLResponse:
+        return HTMLResponse(content=about_page())
 
     @application.get("/privacy", response_class=HTMLResponse, include_in_schema=False)
     def serve_privacy() -> HTMLResponse:
-        return HTMLResponse(content=PRIVACY_HTML)
+        return HTMLResponse(content=privacy_page())
 
     @application.get("/terms", response_class=HTMLResponse, include_in_schema=False)
     def serve_terms() -> HTMLResponse:
-        return HTMLResponse(content=TERMS_HTML)
+        return HTMLResponse(content=terms_page())
 
+    # Application workspace routes
+    @application.get("/investigations", response_class=HTMLResponse, include_in_schema=False)
+    @application.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+    def serve_investigations() -> HTMLResponse:
+        return HTMLResponse(content=investigations_list_page())
+
+    @application.get("/investigations/new", response_class=HTMLResponse, include_in_schema=False)
+    @application.get("/new", response_class=HTMLResponse, include_in_schema=False)
+    def serve_new_analysis() -> HTMLResponse:
+        return HTMLResponse(content=new_analysis_page())
+
+    @application.get("/investigations/{session_id}", response_class=HTMLResponse, include_in_schema=False)
+    def serve_investigation_overview(session_id: str) -> HTMLResponse:
+        return HTMLResponse(content=investigation_overview_page(session_id))
+
+    @application.get("/investigations/{session_id}/evidence", response_class=HTMLResponse, include_in_schema=False)
+    def serve_evidence_explorer(session_id: str) -> HTMLResponse:
+        return HTMLResponse(content=evidence_explorer_page(session_id))
+
+    @application.get("/investigations/{session_id}/provenance", response_class=HTMLResponse, include_in_schema=False)
+    def serve_provenance(session_id: str) -> HTMLResponse:
+        return HTMLResponse(content=provenance_page(session_id))
+
+    @application.get("/investigations/{session_id}/bundle", response_class=HTMLResponse, include_in_schema=False)
+    def serve_bundle(session_id: str) -> HTMLResponse:
+        return HTMLResponse(content=bundle_page(session_id))
+
+    # Favicon routes
     @application.get("/favicon.svg", include_in_schema=False)
     @application.get("/favicon.ico", include_in_schema=False)
     def serve_favicon() -> Response:
