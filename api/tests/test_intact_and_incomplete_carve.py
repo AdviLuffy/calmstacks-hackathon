@@ -267,3 +267,90 @@ def test_unaligned_raw_media_reports_incomplete_and_never_claims_verified(integr
     assert recon["unplaced_fragments_count"] > 0
     assert "incomplete" in recon["forensic_notice"].lower()
     assert recon["reconstructed_sha256"] is None
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Structure-Aligned Scrambled Evidence Upload End-to-End
+# ---------------------------------------------------------------------------
+
+def test_scrambled_evidence_upload_reconstruction_end_to_end(integrated_client: TestClient):
+    """Uploading TRACE_Scrambled_Evidence.bin reconstructs 100% byte-for-byte and validates against ground truth."""
+    scrambled_path = EVIDENCE_DIR / "TRACE_Scrambled_Evidence.bin"
+    gt_path = GROUND_TRUTH_DIR / "TRACE_Scramble_Test_GroundTruth.pdf"
+    if not scrambled_path.is_file() or not gt_path.is_file():
+        pytest.skip("Scrambled evidence fixture not found on disk")
+
+    scrambled_bytes = scrambled_path.read_bytes()
+    gt_bytes = gt_path.read_bytes()
+    expected_sha256 = hashlib.sha256(gt_bytes).hexdigest()
+
+    response = integrated_client.post(
+        "/api/sessions/carve",
+        data={
+            "case_id": "CASE-SCRAMBLED-01",
+            "case_title": "Scrambled PDF Evidence Examination",
+            "investigator": "Examiner-Scramble",
+            "write_blocked": "true",
+            "acquisition_method": "file_copy",
+        },
+        files={"file": ("TRACE_Scrambled_Evidence.bin", io.BytesIO(scrambled_bytes), "application/octet-stream")},
+    )
+    assert response.status_code == 201, response.text
+    session_id = response.json()["session_id"]
+
+    recon_res = integrated_client.get(f"/api/sessions/{session_id}/reconstruction")
+    assert recon_res.status_code == 200
+    recon = recon_res.json()
+
+    assert recon["is_intact_passthrough"] is False
+    assert recon["complete"] is True
+    # Per P1 Honesty Invariant #2, is_verified is False without test-only ground truth oracle
+    assert recon["is_verified"] is False
+    assert recon["fragments_carved"] == 7
+    assert recon["fragments_placed"] == 7
+    assert recon["unplaced_fragments_count"] == 0
+    assert recon["reconstructed_sha256"] == expected_sha256
+    assert recon["byte_coverage"] == "100%"
+
+    dl_res = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download")
+    assert dl_res.status_code == 200
+    assert dl_res.content == gt_bytes
+    assert hashlib.sha256(dl_res.content).hexdigest() == expected_sha256
+    assert b"TRACE SCRAMBLED TEST FILE" in dl_res.content
+
+
+# ---------------------------------------------------------------------------
+# Test 5: Arbitrary Non-PDF Binary Upload
+# ---------------------------------------------------------------------------
+
+def test_arbitrary_binary_upload_yields_incomplete_with_zero_placed(integrated_client: TestClient):
+    """Uploading arbitrary non-PDF bytes must report incomplete, 0 placed fragments, and never return fake files."""
+    arbitrary_bytes = b"\x00\x01\x02\x03\x04\x05" * 256  # 1536 bytes of non-PDF data
+
+    response = integrated_client.post(
+        "/api/sessions/carve",
+        data={
+            "case_id": "CASE-RANDOM-01",
+            "case_title": "Arbitrary Non-PDF Data",
+            "write_blocked": "false",
+        },
+        files={"file": ("random_stream.bin", io.BytesIO(arbitrary_bytes), "application/octet-stream")},
+    )
+    assert response.status_code == 201, response.text
+    session_id = response.json()["session_id"]
+
+    recon_res = integrated_client.get(f"/api/sessions/{session_id}/reconstruction")
+    assert recon_res.status_code == 200
+    recon = recon_res.json()
+
+    assert recon["is_intact_passthrough"] is False
+    assert recon["complete"] is False
+    assert recon["status"] == "incomplete"
+    assert recon["is_verified"] is False
+    assert recon["fragments_placed"] == 0
+    assert recon["unplaced_fragments_count"] > 0
+    assert recon["reconstructed_sha256"] is None
+
+    # Downloading an incomplete reconstruction with 0 placed fragments returns 404 (not a fake file)
+    dl_res = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download")
+    assert dl_res.status_code == 404

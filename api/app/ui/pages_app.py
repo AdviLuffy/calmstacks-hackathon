@@ -247,7 +247,8 @@ def new_analysis_page() -> str:
         <div id="synthetic-section">
           <label class="form-label" for="fixture_id">Select Test Fixture</label>
           <select id="fixture_id" name="fixture_id" class="form-select">
-            <option value="visible_text_blob">Visible Text Synthetic PDF Blob (blob_visible_text.bin &bull; 2,560 bytes &bull; 10 fragments &bull; Visible Content Test)</option>
+            <option value="scrambled_evidence_blob">Scrambled PDF Evidence (TRACE_Scrambled_Evidence.bin &bull; 1,792 bytes &bull; 7 fragments &bull; 'TRACE SCRAMBLED TEST FILE')</option>
+            <option value="visible_text_blob">Visible Text Synthetic PDF Blob (blob_visible_text.bin &bull; 2,560 bytes &bull; 10 fragments &bull; 'TRACE FORENSIC RECONSTRUCTION TEST')</option>
             <option value="synthetic_blob">Deterministic Synthetic PDF Blob (blob_1337.bin &bull; 2,048 bytes &bull; 8 fragments &bull; Blank Canvas)</option>
             <option value="bundle_minimal">M0 Contract Floor Bundle (bundle_minimal.json &bull; 2,127 bytes &bull; 0 fragments)</option>
             <option value="bundle_realistic">Realistic Multi-Fragment Bundle (bundle_realistic.json &bull; 25,709 bytes &bull; 5 fragments)</option>
@@ -261,7 +262,18 @@ def new_analysis_page() -> str:
         <div id="upload-section" style="display: none;">
           <label class="form-label" for="file_upload">Upload Media Bitstream</label>
           <input type="file" id="file_upload" name="file" class="form-input" accept=".bin,.raw,.img,.dd,.json,.pdf">
-          <div class="form-hint">Supported formats: Raw sector images (.bin, .raw, .img, .dd), intact documents (.pdf), or canonical JSON bundles (.json).</div>
+          <div class="form-hint" style="margin-bottom: 0.75rem;">Supported formats: Raw sector images (.bin, .raw, .img, .dd), intact documents (.pdf), or canonical JSON bundles (.json).</div>
+          
+          <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: 2px; padding: 0.85rem; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary);">
+            <div style="font-weight: 700; color: var(--accent-cyan); font-family: var(--font-mono); margin-bottom: 0.25rem;">
+              ENGINE SPECIFICATION &amp; RECONSTRUCTION CONSTRAINTS
+            </div>
+            <ul style="margin: 0 0 0 1.15rem; padding: 0;">
+              <li><strong>Intact PDF (.pdf):</strong> Complete, sequential PDF files are validated against ISO 32000-1 syntax rules and ingested directly with 100% original bitstream preservation (zero fragment fabrication).</li>
+              <li><strong>Scrambled Binary Evidence (.bin, .raw, .dd):</strong> Supported when evidence fragments are structure-aligned (e.g. 256-byte sector blocks) where structural markers (<code>%PDF-</code>, objects, xref tables, trailers, and <code>%%EOF</code>) provide deterministic graph edges for authentic assembly.</li>
+              <li><strong>Engine Limitation:</strong> Arbitrary fragmentation without structural alignment or with missing fragments cannot be mathematically solved without guessing. TRACE strictly refuses to fabricate missing bytes; unplaced fragments are flagged as <strong>INCOMPLETE</strong> and never marked as verified.</li>
+            </ul>
+          </div>
         </div>
       </div>
 
@@ -633,18 +645,47 @@ __SUBNAV__
           document.getElementById('recon-frags').textContent = (recon.fragments_placed || 0) + ' / ' + (recon.fragments_carved || 0) + ' fragments';
         } else if (recon.status === 'incomplete' || !recon.complete) {
           const unplaced = recon.unplaced_fragments_count || 0;
+          const placed = recon.fragments_placed || 0;
+          const carved = recon.fragments_carved || 0;
           stTag.textContent = `INCOMPLETE (${unplaced} UNPLACED)`;
           stTag.className = 'tag tag-amber';
           if (cardTitle) cardTitle.textContent = '[P1] Incomplete Fragment Reconstruction';
           if (cardDesc) cardDesc.textContent = `Partial assembly: ${unplaced} fragment(s) remain unplaced. Reconstruction halted to prevent unverified fabrication. Output is partial and unverified.`;
           if (intactBanner) intactBanner.style.display = 'none';
-          if (dlBtn) dlBtn.innerHTML = '&darr; Download Partial PDF (Unverified)';
-          document.getElementById('recon-frags').textContent = (recon.fragments_placed || 0) + ' / ' + (recon.fragments_carved || 0) + ' fragments';
+          if (digestLabel) digestLabel.textContent = 'PARTIAL RECONSTRUCTION SHA-256:';
+          if (coverageVal) {
+            if (placed === 0) {
+              coverageVal.textContent = '0% (NO VALID CHAINS)';
+              coverageVal.style.color = 'var(--accent-red)';
+            } else {
+              const pct = carved > 0 ? Math.round((placed / carved) * 100) : 0;
+              coverageVal.textContent = `${pct}% (PARTIAL / UNVERIFIED)`;
+              coverageVal.style.color = 'var(--accent-amber)';
+            }
+          }
+          if (dlBtn) {
+            if (placed === 0) {
+              dlBtn.innerHTML = '&#9888; Reconstruction Halted (0 Placed)';
+              dlBtn.className = 'btn btn-secondary';
+              dlBtn.removeAttribute('href');
+              dlBtn.style.cursor = 'not-allowed';
+              dlBtn.style.opacity = '0.6';
+            } else {
+              dlBtn.innerHTML = '&darr; Download Partial PDF (Unverified)';
+            }
+          }
+          document.getElementById('recon-frags').textContent = placed + ' / ' + carved + ' fragments';
           if (s1Tag) {
             s1Tag.textContent = 'INCOMPLETE';
             s1Tag.className = 'tag tag-amber';
           }
-          if (s1Desc) s1Desc.textContent = `Reconstruction halted: ${unplaced} unplaced fragment(s). Authentic ordering could not be mathematically guaranteed.`;
+          if (s1Desc) {
+            if (placed === 0) {
+              s1Desc.textContent = 'Reconstruction halted: No valid PDF header (%PDF-) or traversable chains detected. Arbitrary or unsupported binary stream.';
+            } else {
+              s1Desc.textContent = `Reconstruction halted: ${unplaced} unplaced fragment(s). Authentic ordering could not be mathematically guaranteed.`;
+            }
+          }
         } else {
           stTag.textContent = (recon.status || 'unknown').toUpperCase();
           stTag.className = 'tag tag-copper';
@@ -656,7 +697,12 @@ __SUBNAV__
             specEl.innerHTML = `<strong>INTACT DOCUMENT STREAM:</strong> Complete, unfragmented PDF bitstream ingested directly. Exact source bytes preserved without synthetic or fragment assembly.`;
           } else if (recon.status === 'incomplete' || !recon.complete) {
             const unplaced = recon.unplaced_fragments_count || 0;
-            specEl.innerHTML = `<span style="color: var(--accent-amber);"><strong>RECONSTRUCTION INCOMPLETE:</strong> ${unplaced} fragment(s) remain unplaced. Structural DNA analysis halted due to unaligned PDF objects or broken sequence in raw media. Output is partial and unverified.</span>`;
+            const placed = recon.fragments_placed || 0;
+            if (placed === 0) {
+              specEl.innerHTML = `<span style="color: var(--accent-red);"><strong>UNSUPPORTED OR UNRECOGNIZED INPUT:</strong> No valid PDF header (%PDF-) or structural markers detected in input media. Deterministic reconstruction cannot assemble arbitrary non-PDF binary files without authentic markers.</span>`;
+            } else {
+              specEl.innerHTML = `<span style="color: var(--accent-amber);"><strong>RECONSTRUCTION INCOMPLETE:</strong> ${unplaced} fragment(s) remain unplaced. Structural DNA analysis halted due to unaligned PDF objects or broken sequence in raw media. Output is partial and unverified.</span>`;
+            }
           } else if (recon.pdf_structure) {
             const ps = recon.pdf_structure;
             specEl.innerHTML = `<strong>${ps.specification_status}</strong> &bull; MediaBox: [${(ps.mediabox || [0,0,200,200]).join(' ')}] &bull; Objects: ${ps.object_count}`;
@@ -1031,11 +1077,26 @@ __SUBNAV__
           subTag.textContent = 'PARTIAL / UNALIGNED INPUT';
           subTag.className = 'tag tag-amber';
         }
+        const eyebrow = document.getElementById('prov-eyebrow');
+        const title = document.getElementById('prov-title');
+        const desc = document.getElementById('prov-desc');
+        const dlBtn = document.getElementById('prov-download-btn');
+        if (eyebrow) eyebrow.textContent = 'Partial Assembly Ledger';
+        if (title) title.textContent = 'Incomplete Byte-Level Provenance Ledger';
+        if (desc) desc.textContent = 'Reconstruction halted before all fragments could be deterministically verified. Displaying partial fragments with authentic joins.';
         const provList = data.provenance || [];
         if (provList.length === 0) {
+          if (dlBtn) {
+            dlBtn.innerHTML = '&#9888; Reconstruction Halted (0 Placed)';
+            dlBtn.className = 'btn btn-secondary';
+            dlBtn.removeAttribute('href');
+            dlBtn.style.cursor = 'not-allowed';
+            dlBtn.style.opacity = '0.6';
+          }
           tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--accent-amber); padding: 2rem;">Reconstruction incomplete: ${unplaced} fragment(s) remain unplaced. Structural sequence halted; no verified fragments assembled.</td></tr>`;
           return;
         }
+        if (dlBtn) dlBtn.innerHTML = '&darr; Download Partial PDF (Unverified)';
         tbody.innerHTML = provList.map(p => `
           <tr>
             <td class="code-cell" style="color: var(--accent-copper); font-weight: 700;">[${p.output_offset_start}..${p.output_offset_end}]</td>

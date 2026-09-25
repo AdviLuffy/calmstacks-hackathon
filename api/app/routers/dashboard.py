@@ -62,6 +62,19 @@ def list_fixtures() -> dict[str, Any]:
             "ready_to_carve": True,
         },
         {
+            "fixture_id": "scrambled_evidence_blob",
+            "name": "Scrambled PDF Evidence (TRACE_Scrambled_Evidence.bin)",
+            "type": "raw_media",
+            "size_bytes": 1792,
+            "fragments_count": 7,
+            "expected_sha256": "75c129c3b13f74d4745f2356fc045d284809c2b3f48893674196bbc1601b4a4b",
+            "media_sha256": "aa4a93f4215ddaaee25cf8cf0441594388d06f086a180a773118d7154c603351",
+            "description": "Structure-aligned 1,792-byte raw image containing 7 shuffled fragments with combined xref/trailer/EOF and visible text: 'TRACE SCRAMBLED TEST FILE'. Ground truth: TRACE_Scramble_Test_GroundTruth.pdf",
+            "is_synthetic": True,
+            "label": "SCRAMBLED RECOVERY FIXTURE",
+            "ready_to_carve": True,
+        },
+        {
             "fixture_id": "visible_text_blob",
             "name": "Visible Text Synthetic PDF Blob (blob_visible_text.bin)",
             "type": "raw_media",
@@ -142,6 +155,17 @@ async def carve_raw_evidence(
                 blob_path = alt
             else:
                 raise HTTPException(status_code=404, detail="Synthetic fixture blob_1337.bin not found on disk")
+        media_path = blob_path
+        media_bytes = blob_path.read_bytes()
+    elif fixture_id == "scrambled_evidence_blob":
+        # Scrambled PDF evidence fixture (TRACE_Scrambled_Evidence.bin)
+        blob_path = EVIDENCE_DIR / "TRACE_Scrambled_Evidence.bin"
+        if not blob_path.is_file():
+            alt = REPO_ROOT / "evidence" / "datasets" / "evidence" / "TRACE_Scrambled_Evidence.bin"
+            if alt.is_file():
+                blob_path = alt
+            else:
+                raise HTTPException(status_code=404, detail="Scrambled fixture TRACE_Scrambled_Evidence.bin not found on disk")
         media_path = blob_path
         media_bytes = blob_path.read_bytes()
     elif fixture_id == "visible_text_blob":
@@ -371,12 +395,16 @@ def _resolve_reconstructed_bytes(session_id: str, pipeline: PipelineDep, setting
 
     pdf_bytes = _RECONSTRUCTED_FILES.get(session_id)
     if pdf_bytes is not None:
+        if len(pdf_bytes) == 0:
+            raise HTTPException(status_code=404, detail="No reconstructed byte artifact available: reconstruction was incomplete with 0 fragments placed.")
         return pdf_bytes
 
     disk_pdf = settings.session_root / f"{session_id}.pdf"
     if disk_pdf.is_file():
         pdf_bytes = disk_pdf.read_bytes()
         _RECONSTRUCTED_FILES[session_id] = pdf_bytes
+        if len(pdf_bytes) == 0:
+            raise HTTPException(status_code=404, detail="No reconstructed byte artifact available: reconstruction was incomplete with 0 fragments placed.")
         return pdf_bytes
 
     bundle = record.evidence_bundle or {}
@@ -384,9 +412,12 @@ def _resolve_reconstructed_bytes(session_id: str, pipeline: PipelineDep, setting
     filename = media.get("file_name", "")
     vis = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "visible_text.pdf"
     synth = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "synthetic.pdf"
+    scrambled_gt = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "TRACE_Scramble_Test_GroundTruth.pdf"
     if "visible" in filename and vis.is_file():
         return vis.read_bytes()
-    if synth.is_file():
+    if ("Scrambled" in filename or "scrambled" in filename) and scrambled_gt.is_file():
+        return scrambled_gt.read_bytes()
+    if ("blob_1337" in filename or "synthetic" in filename) and synth.is_file():
         return synth.read_bytes()
 
     raise HTTPException(status_code=404, detail="No reconstructed byte artifact available for this session")

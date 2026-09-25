@@ -46,7 +46,13 @@ from .constants import (
     KIND_XREF,
     LABEL_CANDIDATE,
 )
-from .dna import FragmentProfile
+from .dna import (
+    FragmentProfile,
+    TOKEN_EOF,
+    TOKEN_STARTXREF,
+    TOKEN_TRAILER,
+    TOKEN_XREF,
+)
 
 __all__ = [
     "RULE_HEADER_TO_FIRST_OBJECT",
@@ -310,10 +316,10 @@ def derive_relationships(profiles: Sequence[FragmentProfile]) -> RelationshipAna
 
     headers = grouped.get(KIND_HEADER, [])
     objects = grouped.get(KIND_OBJECT, [])
-    xrefs = grouped.get(KIND_XREF, [])
-    trailers = grouped.get(KIND_TRAILER, [])
-    startxrefs = grouped.get(KIND_STARTXREF, [])
-    eofs = grouped.get(KIND_EOF, [])
+    xrefs = [p for p in profiles if p.kind == KIND_XREF or (not p.is_object and TOKEN_XREF in p.tokens)]
+    trailers = [p for p in profiles if p.kind == KIND_TRAILER or (not p.is_object and TOKEN_TRAILER in p.tokens)]
+    startxrefs = [p for p in profiles if p.kind == KIND_STARTXREF or (not p.is_object and TOKEN_STARTXREF in p.tokens)]
+    eofs = [p for p in profiles if p.kind == KIND_EOF or (not p.is_object and TOKEN_EOF in p.tokens)]
 
     header = _expect_one(RULE_HEADER_TO_FIRST_OBJECT, KIND_HEADER, headers, unresolved)
     xref = _expect_one(RULE_XREF_TO_TRAILER, KIND_XREF, xrefs, unresolved)
@@ -368,7 +374,7 @@ def derive_relationships(profiles: Sequence[FragmentProfile]) -> RelationshipAna
 
 
 def _append_section_edges(xref, trailer, startxref, eof, edges) -> None:
-    if xref is not None and trailer is not None:
+    if xref is not None and trailer is not None and xref.fragment_id != trailer.fragment_id:
         edges.append(
             _edge(
                 RULE_XREF_TO_TRAILER,
@@ -377,7 +383,7 @@ def _append_section_edges(xref, trailer, startxref, eof, edges) -> None:
                 ("exactly one xref fragment", "exactly one trailer fragment"),
             )
         )
-    if trailer is not None and startxref is not None:
+    if trailer is not None and startxref is not None and trailer.fragment_id != startxref.fragment_id:
         edges.append(
             _edge(
                 RULE_TRAILER_TO_STARTXREF,
@@ -386,7 +392,7 @@ def _append_section_edges(xref, trailer, startxref, eof, edges) -> None:
                 ("exactly one trailer fragment", "exactly one startxref fragment"),
             )
         )
-    if startxref is not None and eof is not None:
+    if startxref is not None and eof is not None and startxref.fragment_id != eof.fragment_id:
         edges.append(
             _edge(
                 RULE_STARTXREF_TO_EOF,

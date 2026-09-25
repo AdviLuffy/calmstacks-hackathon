@@ -29,7 +29,7 @@ from .constants import (
     STATUS_INCOMPLETE,
     STATUS_STRUCTURALLY_VALID,
 )
-from .dna import FragmentProfile
+from .dna import FragmentProfile, TOKEN_EOF
 from .hashing import sha256_bytes
 from .models import Fragment
 from .relationships import Relationship, RelationshipAnalysis, UnresolvedJoin
@@ -178,7 +178,7 @@ def walk_candidate_chain(
 
     if chain:
         last_profile = by_id[chain[-1]]
-        if last_profile.kind != KIND_EOF:
+        if last_profile.kind != KIND_EOF and TOKEN_EOF not in last_profile.tokens:
             warnings.append(
                 f"chain ended at kind {last_profile.kind!r} instead of {KIND_EOF!r}"
             )

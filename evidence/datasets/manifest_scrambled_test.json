@@ -1,0 +1,19 @@
+{
+  "purpose": "Synthetic, structure-aligned 256-byte-block reconstruction test",
+  "block_size_bytes": 256,
+  "block_count": 7,
+  "scrambled_block_order_original_indices": [
+    3,
+    4,
+    2,
+    1,
+    5,
+    6,
+    0
+  ],
+  "ground_truth_filename": "TRACE_Scramble_Test_GroundTruth.pdf",
+  "ground_truth_sha256": "75c129c3b13f74d4745f2356fc045d284809c2b3f48893674196bbc1601b4a4b",
+  "scrambled_evidence_sha256": "aa4a93f4215ddaaee25cf8cf0441594388d06f086a180a773118d7154c603351",
+  "visible_text": "TRACE SCRAMBLED TEST FILE",
+  "warning": "Synthetic test only. The PDF bytes are padded to fixed blocks and shuffled. Confirm compatibility with your exact TRACE build; do not treat as real evidence."
+}
