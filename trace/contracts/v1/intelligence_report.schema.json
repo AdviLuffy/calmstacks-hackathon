@@ -1,0 +1,569 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace.example/schemas/v1/intelligence_report.schema.json",
+  "title": "TRACE intelligence report (v1)",
+  "description": "Producer contract: Person 2 (AI & Intelligence) -> Person 3 (Investigator experience). Frozen at M0. Deterministic computation is authoritative for every label, numeric score, integrity fact, byte range, timestamp, reconstruction fact, definitive relationship, priority value and epistemic status. AI supplies narrative, hypotheses, alternative interpretations, gap explanations and suggested wording only. Every printable sentence exists as a Claim in explainability.claims_index.",
+  "x-contract-revision": "1.0.0",
+  "x-contract-frozen-utc": "2026-09-25T00:00:00Z",
+  "x-canonicalization": "trace-cj/1.0",
+  "x-hashing": {
+    "outputs_hash": "SHA256(trace-cj/1.0(report with audit.outputs_hash removed, every property tagged x-volatile:true removed, and every root key beginning with '_' removed))",
+    "volatile_paths": ["generated_utc", "audit.runtime_ms", "audit.provider_calls[].latency_ms"],
+    "report_id": "RPT- + lowercase_hex(SHA256('trace.intelligence_report/1.0' || 0x1F || case_id || 0x1F || bundle_sha256 || 0x1F || module_version))[0:12]",
+    "note": "outputs_hash identifies content produced. report_id identifies what was analysed. Same bundle and module version yield the same report_id even when narrative differs."
+  },
+  "type": "object",
+  "required": [
+    "schema_version", "report_id", "case_id", "generated_utc", "source_bundle",
+    "mode", "doctrine", "classifications", "relationships", "priorities",
+    "brief", "explainability", "uncertainty_summary", "validation",
+    "limitations", "audit"
+  ],
+  "properties": {
+    "schema_version": { "const": "trace.intelligence_report/1.0" },
+    "report_id": { "$ref": "common.schema.json#/$defs/DerivedId" },
+    "case_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+    "generated_utc": {
+      "$ref": "common.schema.json#/$defs/IsoUtc",
+      "x-volatile": true,
+      "description": "Execution metadata. Excluded from outputs_hash; never evidence."
+    },
+    "source_bundle": { "$ref": "#/$defs/SourceBundle" },
+    "mode": { "$ref": "#/$defs/Mode" },
+    "doctrine": { "$ref": "#/$defs/Doctrine" },
+    "classifications": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Classification" }
+    },
+    "relationships": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Relationship" }
+    },
+    "priorities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Priority" }
+    },
+    "brief": { "$ref": "#/$defs/Brief" },
+    "explainability": { "$ref": "#/$defs/Explainability" },
+    "uncertainty_summary": { "$ref": "#/$defs/UncertaintySummary" },
+    "validation": { "$ref": "#/$defs/Validation" },
+    "limitations": { "$ref": "#/$defs/Limitations" },
+    "audit": { "$ref": "#/$defs/Audit" },
+    "warnings": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/Warning" }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "SourceBundle": {
+      "type": "object",
+      "x-authority": "deterministic",
+      "description": "Provenance binding. bundle_sha256 is SHA-256 over the trace-cj/1.0 canonical form of the bundle as received, excluding root keys beginning with '_'.",
+      "required": ["schema_version", "bundle_id", "bundle_sha256"],
+      "properties": {
+        "schema_version": { "type": "string", "pattern": "^trace\\.[a-z_]+/\\d+\\.\\d+$" },
+        "bundle_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "bundle_sha256": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "engine": { "type": "string", "maxLength": 160 }
+      },
+      "additionalProperties": false
+    },
+    "Mode": {
+      "type": "object",
+      "x-authority": "deterministic",
+      "description": "Honesty surface. Consumers MUST render degraded and degraded_reasons. Absence of a provider is not a failure: the deterministic path is the reference implementation.",
+      "required": ["provider", "model", "ai_used", "degraded", "degraded_reasons"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["offline", "gemini", "openai"]
+        },
+        "model": {
+          "oneOf": [
+            { "type": "string", "maxLength": 128 },
+            { "type": "null" }
+          ]
+        },
+        "ai_used": { "type": "boolean" },
+        "degraded": { "type": "boolean" },
+        "degraded_reasons": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/DegradedReason" }
+        },
+        "ai_calls": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "Doctrine": {
+      "type": "object",
+      "x-authority": "deterministic",
+      "description": "Machine-readable restatement of the frozen doctrine. epistemic_states, confidence_ceilings, ai_role and policy are const: a report that disagrees with the doctrine fails validation. The long authority inventories live in common.schema.json and in docs/intel_contract.md rather than being repeated in every report.",
+      "required": [
+        "epistemic_states", "confidence_ceilings", "ai_role", "policy", "not_asserted"
+      ],
+      "properties": {
+        "epistemic_states": {
+          "type": "array",
+          "items": { "type": "string" },
+          "const": ["OBSERVED", "COMPUTED", "INFERRED", "MISSING"]
+        },
+        "confidence_ceilings": { "$ref": "common.schema.json#/$defs/ConfidenceCeilings" },
+        "ai_role": { "const": "narrative_only" },
+        "policy": { "const": "ai_never_invents_evidence" },
+        "not_asserted": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" },
+          "description": "Rendered verbatim by the UI. Statements this report explicitly does NOT make."
+        }
+      },
+      "additionalProperties": false
+    },
+    "Classification": {
+      "type": "object",
+      "x-authority": "deterministic",
+      "description": "label, family, status and confidence are deterministic authority. AI may only supply the prose referenced by explanation_claim_id and the alternative_labels hypotheses. Abstention is a first-class, correct outcome: label 'unknown' with abstained true.",
+      "required": [
+        "artifact_id", "label", "status", "confidence",
+        "score_components", "abstained"
+      ],
+      "properties": {
+        "artifact_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "label": { "$ref": "common.schema.json#/$defs/ArtifactLabel" },
+        "family": { "$ref": "common.schema.json#/$defs/ArtifactFamily" },
+        "status": { "$ref": "common.schema.json#/$defs/EpistemicStatus" },
+        "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "score_components": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/ScoreComponent" }
+        },
+        "alternative_labels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "confidence"],
+            "properties": {
+              "label": { "$ref": "common.schema.json#/$defs/ArtifactLabel" },
+              "confidence": { "$ref": "common.schema.json#/$defs/Confidence" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "assumptions": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+        },
+        "unresolved": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+        },
+        "abstained": { "type": "boolean" },
+        "abstention_reason": { "$ref": "common.schema.json#/$defs/SanitizedText" },
+        "explanation_claim_id": { "$ref": "common.schema.json#/$defs/InstanceId" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "abstained": { "const": true } }, "required": ["abstained"] },
+          "then": { "required": ["abstention_reason"] },
+          "x-invariant": "INV-SE-10a: abstention must state why."
+        },
+        {
+          "if": { "properties": { "abstained": { "const": false } }, "required": ["abstained"] },
+          "then": { "not": { "required": ["abstention_reason"] } },
+          "x-invariant": "INV-SE-10b: a non-abstention must not carry an abstention reason."
+        }
+      ],
+      "additionalProperties": false
+    },
+    "Relationship": {
+      "type": "object",
+      "x-authority": "deterministic",
+      "description": "type, status, strength and is_definitive are deterministic authority. is_definitive may be true ONLY where the bundle reports byte_contiguity true for that group. cannot_conclude is mandatory on every relationship, including definitive ones.",
+      "required": [
+        "relationship_id", "type", "members", "status", "strength",
+        "strength_components", "is_definitive", "cannot_conclude"
+      ],
+      "properties": {
+        "relationship_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "type": {
+          "type": "string",
+          "enum": [
+            "OBSERVED_CONTIGUITY", "COMPUTED_ADJACENCY",
+            "COMPUTED_SIGNATURE_CONTINUITY", "COMPUTED_METADATA_CONSISTENCY",
+            "COMPUTED_TEMPORAL_PROXIMITY", "COMPUTED_HASH_DUPLICATE",
+            "INFERRED_HYPOTHESIS", "CONFLICT_OVERLAP", "CONFLICT_MUTUAL_EXCLUSION"
+          ]
+        },
+        "members": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "oneOf": [
+              { "$ref": "common.schema.json#/$defs/InstanceId" },
+              { "$ref": "common.schema.json#/$defs/FragmentInstanceId" }
+            ],
+            "description": "Union of the two approved record identifier formats (artifact/group/event identifiers and fragment identifiers). Required so a relationship over fragments can reference them; not a new ID format."
+          }
+        },
+        "status": { "$ref": "common.schema.json#/$defs/EpistemicStatus" },
+        "strength": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "strength_components": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/ScoreComponent" }
+        },
+        "is_definitive": { "type": "boolean" },
+        "cannot_conclude": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+        },
+        "conflicts_with": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/InstanceId" }
+        },
+        "hypothesis_set_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "explanation_claim_id": { "$ref": "common.schema.json#/$defs/InstanceId" }
+      },
+      "additionalProperties": false
+    },
+    "Priority": {
+      "type": "object",
+      "x-authority": "deterministic",
+      "description": "rank, priority, score, score_components and forced_review are deterministic authority; AI may only author the rationale claim. Bands: critical >= 0.75, high 0.55-0.74, medium 0.35-0.54, low < 0.35. An artifact involved in a conflict, or carrying byte_gaps, MUST be escalated to at least high with forced_review true.",
+      "required": [
+        "rank", "artifact_id", "priority", "score", "score_components",
+        "forced_review", "recommended_action_ids", "evidence_refs"
+      ],
+      "properties": {
+        "rank": { "type": "integer", "minimum": 1 },
+        "artifact_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "priority": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+        "score": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "score_components": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/ScoreComponent" }
+        },
+        "forced_review": { "type": "boolean" },
+        "recommended_action_ids": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/ActionId" }
+        },
+        "rationale_claim_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/EvidenceRef" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Brief": {
+      "type": "object",
+      "description": "The investigator brief. Sections reference validated claim_ids rather than carrying prose of their own, so a claim that failed grounding can never be printed. brief_generated_by records whether the wording came from templates or an LLM.",
+      "required": [
+        "headline", "case_summary_claims", "key_findings", "evidence_gaps",
+        "recommended_next_steps", "open_questions", "brief_generated_by"
+      ],
+      "properties": {
+        "headline": { "$ref": "common.schema.json#/$defs/SanitizedText" },
+        "case_summary_claims": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/InstanceId" }
+        },
+        "key_findings": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/InstanceId" }
+        },
+        "evidence_gaps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Gap" }
+        },
+        "recommended_next_steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/NextStep" }
+        },
+        "open_questions": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+        },
+        "brief_generated_by": { "type": "string", "enum": ["offline_template", "llm"] }
+      },
+      "additionalProperties": false
+    },
+    "Gap": {
+      "type": "object",
+      "description": "An evidence gap. Always MISSING, always actionable: why_missing explains the absence, what_would_resolve names the step that would close it.",
+      "required": [
+        "gap_id", "statement", "status", "why_missing", "what_would_resolve"
+      ],
+      "properties": {
+        "gap_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "statement": { "$ref": "common.schema.json#/$defs/SanitizedText" },
+        "status": { "const": "MISSING" },
+        "why_missing": { "type": "string", "minLength": 10, "maxLength": 512 },
+        "what_would_resolve": { "type": "string", "minLength": 10, "maxLength": 512 },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/EvidenceRef" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "NextStep": {
+      "type": "object",
+      "required": ["action_id", "action", "evidence_refs"],
+      "properties": {
+        "action_id": { "$ref": "common.schema.json#/$defs/ActionId" },
+        "action": { "$ref": "common.schema.json#/$defs/SanitizedText" },
+        "rationale_claim_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/EvidenceRef" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Explainability": {
+      "type": "object",
+      "description": "Three stacked layers: rule trace (how each deterministic decision was computed), provenance (which bundle paths each claim rests on), and narrative (the claims themselves). claims_index is the ONLY place prose lives; every printable sentence a UI shows must exist here.",
+      "required": ["reasoning_trace", "claims_index", "provenance_map", "validator"],
+      "properties": {
+        "reasoning_trace": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ReasoningStep" }
+        },
+        "claims_index": {
+          "type": "object",
+          "propertyNames": { "pattern": "^CLM-[0-9]{3,10}$" },
+          "additionalProperties": { "$ref": "common.schema.json#/$defs/Claim" }
+        },
+        "provenance_map": {
+          "type": "object",
+          "propertyNames": { "pattern": "^CLM-[0-9]{3,10}$" },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "common.schema.json#/$defs/EvidenceRef" }
+          }
+        },
+        "counterfactuals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["claim_id", "if", "then_label", "then_confidence"],
+            "properties": {
+              "claim_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+              "if": { "$ref": "common.schema.json#/$defs/SanitizedText" },
+              "then_label": { "$ref": "common.schema.json#/$defs/ArtifactLabel" },
+              "then_confidence": { "$ref": "common.schema.json#/$defs/Confidence" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "validator": { "$ref": "#/$defs/ValidatorReport" }
+      },
+      "additionalProperties": false
+    },
+    "ReasoningStep": {
+      "type": "object",
+      "description": "One deterministic step. deterministic false is permitted only for narrative-rendering steps.",
+      "required": [
+        "step_id", "op", "deterministic", "inputs", "method", "params", "outputs"
+      ],
+      "properties": {
+        "step_id": { "type": "string", "pattern": "^S[0-9]{1,6}$" },
+        "op": {
+          "type": "string",
+          "enum": [
+            "load", "canonicalize", "classify", "relate",
+            "prioritize", "brief", "explain", "validate", "sanitize"
+          ]
+        },
+        "deterministic": { "type": "boolean" },
+        "inputs": { "type": "array", "items": { "type": "string", "maxLength": 256 } },
+        "method": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "params": { "type": "object", "additionalProperties": true },
+        "outputs": { "type": "array", "items": { "type": "string", "maxLength": 256 } },
+        "rejected_alternatives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "score"],
+            "properties": {
+              "label": { "$ref": "common.schema.json#/$defs/ArtifactLabel" },
+              "score": { "$ref": "common.schema.json#/$defs/UnitInterval" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ValidatorReport": {
+      "type": "object",
+      "description": "Publishing the module's own rejections is a feature, not a failure. A claim that fails grounding is dropped and recorded here.",
+      "required": ["passed", "checks_run", "checks_failed", "rejected_claims"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "checks_run": { "type": "integer", "minimum": 0 },
+        "checks_failed": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/VocabCode" }
+        },
+        "rejected_claims": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+        },
+        "downgraded_claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["claim_id", "reason"],
+            "properties": {
+              "claim_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+              "reason": { "$ref": "common.schema.json#/$defs/SanitizedText" },
+              "from": { "$ref": "common.schema.json#/$defs/Confidence" },
+              "to": { "$ref": "common.schema.json#/$defs/Confidence" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "UncertaintySummary": {
+      "type": "object",
+      "description": "Counts are over claims_index entries, not artifacts. mean_by_status is per-status because averaging across statuses with different ceilings is meaningless.",
+      "required": [
+        "observed_count", "computed_count", "inferred_count", "missing_count",
+        "abstentions", "low_confidence_artifact_ids"
+      ],
+      "properties": {
+        "observed_count": { "type": "integer", "minimum": 0 },
+        "computed_count": { "type": "integer", "minimum": 0 },
+        "inferred_count": { "type": "integer", "minimum": 0 },
+        "missing_count": { "type": "integer", "minimum": 0 },
+        "mean_by_status": {
+          "type": "object",
+          "properties": {
+            "OBSERVED": { "$ref": "common.schema.json#/$defs/UnitInterval" },
+            "COMPUTED": { "$ref": "common.schema.json#/$defs/UnitInterval" },
+            "INFERRED": { "$ref": "common.schema.json#/$defs/UnitInterval" }
+          },
+          "additionalProperties": false
+        },
+        "low_confidence_artifact_ids": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/InstanceId" }
+        },
+        "abstentions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["artifact_id", "reason"],
+            "properties": {
+              "artifact_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+              "reason": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Validation": {
+      "type": "object",
+      "description": "Always present so a consumer can distinguish 'no violations' from 'not checked'. kind discriminates schema conformance from semantic invariant breaches.",
+      "required": ["bundle_conforms", "violations"],
+      "properties": {
+        "bundle_conforms": { "type": "boolean" },
+        "violations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Violation" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Violation": {
+      "type": "object",
+      "required": ["kind", "path", "rule", "action_taken"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["schema", "semantic"] },
+        "path": { "type": "string", "maxLength": 256 },
+        "rule": { "type": "string", "maxLength": 128 },
+        "action_taken": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+      },
+      "additionalProperties": false
+    },
+    "Limitations": {
+      "type": "object",
+      "required": ["engine_limitations", "module_limitations", "not_asserted"],
+      "properties": {
+        "engine_limitations": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+        },
+        "module_limitations": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+        },
+        "not_asserted": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Audit": {
+      "type": "object",
+      "x-authority": "deterministic",
+      "description": "Reproducibility record. outputs_hash is computed over this report with audit.outputs_hash removed and every x-volatile property removed, so a report never hashes itself. runtime_ms is volatile and excluded from that hash.",
+      "required": ["module_version", "outputs_hash"],
+      "properties": {
+        "module_version": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "outputs_hash": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "runtime_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "x-volatile": true,
+          "description": "Execution metadata. Excluded from outputs_hash."
+        },
+        "prompt_version": { "type": "string", "maxLength": 32 },
+        "knowledge_version": { "type": "string", "maxLength": 32 },
+        "provider_calls": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ProviderCall" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderCall": {
+      "type": "object",
+      "required": ["task", "provider", "ok"],
+      "properties": {
+        "task": { "type": "string", "maxLength": 64 },
+        "provider": { "type": "string", "enum": ["offline", "gemini", "openai"] },
+        "ok": { "type": "boolean" },
+        "error_code": { "$ref": "common.schema.json#/$defs/VocabId" },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "x-volatile": true,
+          "description": "Provider latency. Excluded from outputs_hash."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

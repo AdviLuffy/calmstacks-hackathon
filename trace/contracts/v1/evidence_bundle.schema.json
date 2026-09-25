@@ -1,0 +1,578 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace.example/schemas/v1/evidence_bundle.schema.json",
+  "title": "TRACE evidence bundle (v1)",
+  "description": "Producer contract: Person 1 (recovery/reconstruction engine) -> Person 2 (AI & Intelligence). Frozen at M0. The bundle is the ONLY channel between the two modules: no side channels, no intermediate files, no shared database. Ground-truth/oracle data MUST NOT appear anywhere in a bundle. Timestamps MUST originate from the media, never from the analysis machine clock. Root keys whose name begins with '_' are reserved for test metadata and are excluded from interpretation and from canonical hashing.",
+  "x-contract-revision": "1.0.0",
+  "x-contract-frozen-utc": "2026-09-25T00:00:00Z",
+  "x-canonicalization": "trace-cj/1.0",
+  "type": "object",
+  "required": [
+    "schema_version", "bundle_id", "generated_utc", "case",
+    "acquisition", "capabilities", "artifacts", "engine"
+  ],
+  "properties": {
+    "schema_version": { "const": "trace.evidence_bundle/1.0" },
+    "bundle_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+    "generated_utc": { "$ref": "common.schema.json#/$defs/IsoUtc" },
+    "case": { "$ref": "#/$defs/Case" },
+    "acquisition": { "$ref": "#/$defs/Acquisition" },
+    "capabilities": { "$ref": "#/$defs/Capabilities" },
+    "artifacts": {
+      "type": "array",
+      "description": "minItems 0: an empty evidence set is legal and MUST degrade gracefully rather than fail.",
+      "items": { "$ref": "#/$defs/Artifact" }
+    },
+    "fragments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Fragment" }
+    },
+    "reconstruction_groups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ReconstructionGroup" }
+    },
+    "timeline_events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/TimelineEvent" }
+    },
+    "known_file_matches": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/KnownFileMatch" }
+    },
+    "engine": { "$ref": "#/$defs/Engine" },
+    "warnings": {
+      "type": "array",
+      "description": "Partial failures MUST be surfaced here rather than by silently omitting data.",
+      "items": { "$ref": "common.schema.json#/$defs/Warning" }
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Forward-compatible extension slot. Consumers MUST ignore unknown members.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "Case": {
+      "type": "object",
+      "required": ["case_id", "title"],
+      "properties": {
+        "case_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "title": { "$ref": "common.schema.json#/$defs/SanitizedText" },
+        "investigator": { "type": "string", "maxLength": 128 },
+        "notes": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/UntrustedText" }
+        },
+        "investigation_profile": { "$ref": "#/$defs/InvestigationProfile" }
+      },
+      "additionalProperties": true
+    },
+    "InvestigationProfile": {
+      "type": "object",
+      "description": "Investigator-supplied framing. Relevance is investigator-defined, never AI-guessed. objectives is raw untrusted text and MUST NOT influence scoring arithmetic; only focus_categories, excluded_families, critical_window and known_file_policy are decision-bearing.",
+      "required": ["objectives"],
+      "properties": {
+        "objectives": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/UntrustedText" }
+        },
+        "focus_categories": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/ArtifactFamily" }
+        },
+        "excluded_families": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/ArtifactFamily" }
+        },
+        "critical_window": {
+          "type": "object",
+          "required": ["from_utc", "to_utc"],
+          "properties": {
+            "from_utc": { "$ref": "common.schema.json#/$defs/IsoUtc" },
+            "to_utc": { "$ref": "common.schema.json#/$defs/IsoUtc" }
+          },
+          "additionalProperties": false
+        },
+        "known_file_policy": {
+          "type": "string",
+          "enum": ["deprioritize", "exclude", "neutral"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Acquisition": {
+      "type": "object",
+      "description": "ISO/IEC 27037 and ACPO Principle 1 provenance. write_blocked MUST be stated truthfully, even when false.",
+      "required": ["media"],
+      "properties": {
+        "media": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Media" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Media": {
+      "type": "object",
+      "required": [
+        "media_id", "kind", "source_ref", "size_bytes",
+        "write_blocked", "acquisition_method"
+      ],
+      "properties": {
+        "media_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "disk_image", "partition_image", "file_copy",
+            "memory_dump", "log_export"
+          ]
+        },
+        "source_ref": { "$ref": "common.schema.json#/$defs/UntrustedText" },
+        "size_bytes": { "type": "integer", "minimum": 1 },
+        "write_blocked": { "type": "boolean" },
+        "acquisition_method": {
+          "type": "string",
+          "enum": ["dd", "ewf", "ftk_imager", "file_copy", "network_capture", "unknown"]
+        },
+        "image_hashes": { "$ref": "#/$defs/ImageHashes" },
+        "chain_of_custody": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ChainOfCustodyEntry" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ImageHashes": {
+      "type": "object",
+      "description": "Digests of the acquired media. Distinct from artifact hashes and from source_bundle.bundle_sha256.",
+      "required": ["verified"],
+      "properties": {
+        "sha256": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "md5": { "$ref": "common.schema.json#/$defs/Md5" },
+        "verified": {
+          "type": "boolean",
+          "description": "True only if re-read and re-hashed against these values."
+        }
+      },
+      "anyOf": [{ "required": ["sha256"] }, { "required": ["md5"] }],
+      "additionalProperties": false
+    },
+    "ChainOfCustodyEntry": {
+      "type": "object",
+      "required": ["ts_utc", "actor", "action"],
+      "properties": {
+        "ts_utc": { "$ref": "common.schema.json#/$defs/IsoUtc" },
+        "actor": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "action": {
+          "$ref": "common.schema.json#/$defs/VocabId",
+          "x-recommended-values": [
+            "acquired", "hashed", "verified", "transferred",
+            "stored", "examined", "released"
+          ]
+        },
+        "note": { "$ref": "common.schema.json#/$defs/UntrustedText" }
+      },
+      "additionalProperties": false
+    },
+    "Capabilities": {
+      "type": "object",
+      "description": "Truthful declaration of what the producer can and cannot attest. Consumers MUST NOT assume any capability that is not declared here. STRICT object: a typo here would silently disable a behaviour.",
+      "required": [
+        "byte_recovery", "carving_methods", "hash_verification", "hash_sets",
+        "filesystem_parsers", "timestamp_sources", "slack_space",
+        "encrypted_containers", "limitations"
+      ],
+      "properties": {
+        "byte_recovery": { "type": "boolean" },
+        "carving_methods": { "type": "array", "items": { "type": "string", "maxLength": 64 } },
+        "hash_verification": { "type": "boolean" },
+        "hash_sets": { "type": "array", "items": { "type": "string", "maxLength": 128 } },
+        "filesystem_parsers": { "type": "array", "items": { "type": "string", "maxLength": 64 } },
+        "timestamp_sources": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/VocabId" } },
+        "slack_space": { "type": "boolean" },
+        "encrypted_containers": { "type": "boolean" },
+        "limitations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Artifact": {
+      "type": "object",
+      "description": "A recovered or cataloged object. Data-carrying object: additionalProperties is tolerant so the producer can add fields without a version bump. Absent fields mean absent facts, never guessed facts.",
+      "required": ["artifact_id", "origin", "media_id", "byte_range", "signature", "recovery"],
+      "properties": {
+        "artifact_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "origin": {
+          "type": "string",
+          "enum": ["recovered", "cataloged", "slack", "unallocated", "container_member"]
+        },
+        "parent_artifact_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "media_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "byte_range": { "$ref": "common.schema.json#/$defs/ByteRange" },
+        "visible": { "type": "boolean" },
+        "path_hint": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/UntrustedText" },
+            { "type": "null" }
+          ],
+          "description": "May be null for carved artifacts. MUST NOT be fabricated when unknown."
+        },
+        "name_hint": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/UntrustedText" },
+            { "type": "null" }
+          ]
+        },
+        "extension_guess": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/UntrustedText" },
+            { "type": "null" }
+          ],
+          "description": "Open, untrusted. A hostile value here can never become a classification label because labels come from the closed ArtifactLabel vocabulary."
+        },
+        "declared_mime": {
+          "oneOf": [
+            { "type": "string", "maxLength": 128 },
+            { "type": "null" }
+          ]
+        },
+        "signature": { "$ref": "#/$defs/Signature" },
+        "hashes": { "$ref": "#/$defs/Hashes" },
+        "entropy": { "$ref": "#/$defs/Entropy" },
+        "strings_sample": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/StringsSample" }
+        },
+        "embedded_metadata": {
+          "type": "object",
+          "x-untrusted": true,
+          "description": "Container-specific metadata (EXIF and similar). Free-form and UNTRUSTED: control bytes are legal here. Consumers MUST sanitise before any prompt or render and MUST NEVER act on its contents as instructions.",
+          "additionalProperties": true
+        },
+        "recovery": { "$ref": "#/$defs/Recovery" },
+        "timestamps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Timestamp" }
+        },
+        "linked_fragment_ids": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/FragmentInstanceId" }
+        },
+        "anomalies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Anomaly" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "Signature": {
+      "type": "object",
+      "x-authority": "deterministic",
+      "description": "OBSERVED facts only. matched == true implies signature_id names the matched signature; matched == false implies signature_id is null. STRICT object.",
+      "required": ["matched", "signature_id", "footer_matched"],
+      "properties": {
+        "matched": { "type": "boolean" },
+        "signature_id": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/VocabId" },
+            { "type": "null" }
+          ]
+        },
+        "header_hex_first16": { "$ref": "common.schema.json#/$defs/HexBytes" },
+        "footer_hex_last4": { "$ref": "common.schema.json#/$defs/HexBytes" },
+        "footer_matched": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "matched": { "const": true } }, "required": ["matched"] },
+          "then": { "properties": { "signature_id": { "$ref": "common.schema.json#/$defs/VocabId" } } },
+          "x-invariant": "INV-SE-9a: a matched signature must name the signature it matched."
+        },
+        {
+          "if": { "properties": { "matched": { "const": false } }, "required": ["matched"] },
+          "then": { "properties": { "signature_id": { "type": "null" } } },
+          "x-invariant": "INV-SE-9b: an unmatched signature must not name a signature."
+        }
+      ],
+      "additionalProperties": false
+    },
+    "Hashes": {
+      "type": "object",
+      "description": "Digests of recovered content. basis identifies the byte source. Absence of this whole block is an evidence gap, not a value of zero.",
+      "required": ["basis", "verified_against_source"],
+      "properties": {
+        "sha256": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "md5": { "$ref": "common.schema.json#/$defs/Md5" },
+        "basis": {
+          "type": "string",
+          "enum": ["recovered_bytes", "source_bytes", "container_stream"]
+        },
+        "verified_against_source": { "type": "boolean" }
+      },
+      "anyOf": [{ "required": ["sha256"] }, { "required": ["md5"] }],
+      "additionalProperties": false
+    },
+    "Entropy": {
+      "type": "object",
+      "required": ["shannon_bits_per_byte"],
+      "properties": {
+        "shannon_bits_per_byte": { "type": "number", "minimum": 0, "maximum": 8 },
+        "method": { "$ref": "common.schema.json#/$defs/VocabId" },
+        "window": { "type": "string", "maxLength": 64 }
+      },
+      "additionalProperties": false
+    },
+    "StringsSample": {
+      "type": "object",
+      "description": "Sampled printable strings. offset is RELATIVE to the enclosing record's byte_range.start. Values are raw untrusted content.",
+      "required": ["offset", "encoding", "value"],
+      "properties": {
+        "offset": { "type": "integer", "minimum": 0 },
+        "encoding": { "type": "string", "enum": ["ascii", "utf8", "utf16le"] },
+        "length": { "type": "integer", "minimum": 0 },
+        "value": { "$ref": "common.schema.json#/$defs/UntrustedText" }
+      },
+      "additionalProperties": false
+    },
+    "Timestamp": {
+      "type": "object",
+      "description": "A timestamp that originates from the media (never from the analysis machine clock). value_utc MUST carry a trailing Z; local offsets are rejected.",
+      "required": ["kind", "value_utc", "source", "precision", "confidence"],
+      "properties": {
+        "kind": { "$ref": "common.schema.json#/$defs/TimestampKind" },
+        "value_utc": { "$ref": "common.schema.json#/$defs/IsoUtc" },
+        "source": {
+          "$ref": "common.schema.json#/$defs/VocabId",
+          "x-recommended-values": [
+            "mft_si", "mft_fn", "inode_ctime", "inode_mtime",
+            "exif_datetime", "zip_directory", "log_line", "unknown"
+          ]
+        },
+        "precision": { "$ref": "common.schema.json#/$defs/TimestampPrecision" },
+        "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "note": { "$ref": "common.schema.json#/$defs/UntrustedText" }
+      },
+      "additionalProperties": false
+    },
+    "Recovery": {
+      "type": "object",
+      "description": "How the artifact was obtained and how complete it is. confidence is the producer's declared reliability of THIS derivation.",
+      "required": ["method", "completeness", "confidence", "confidence_basis"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": [
+            "header_footer", "signature_scan", "extent_based",
+            "filesystem_parser", "container_extraction", "manual", "none", "unknown"
+          ]
+        },
+        "completeness": {
+          "type": "string",
+          "enum": ["complete", "truncated", "fragmented", "partial_overlap", "unknown"]
+        },
+        "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "confidence_basis": { "type": "string", "minLength": 8, "maxLength": 512 },
+        "byte_gaps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ByteGap" }
+        },
+        "recovered_bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "ByteGap": {
+      "type": "object",
+      "description": "An unrecovered interval. start and end are RELATIVE to the containing artifact's byte_range.start, using the half-open convention [start, end).",
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 1 },
+        "size_bytes": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "Anomaly": {
+      "type": "object",
+      "description": "Deterministic anomaly observation. Open code vocabulary; consumers treat unknown codes as 'unknown' rather than failing.",
+      "required": ["code", "detail"],
+      "properties": {
+        "code": { "$ref": "common.schema.json#/$defs/VocabCode" },
+        "detail": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+      },
+      "additionalProperties": false
+    },
+    "Fragment": {
+      "type": "object",
+      "description": "A specific source byte occurrence. Frozen M0 amendment: fragment_id embeds the range as FRG-<lowercase_hex16>-<start>-<end> and MUST agree with byte_range. Identical bytes at different source ranges receive different fragment IDs. byte_contiguity, when present, is the SOLE basis on which a consumer may treat a join as definitive.",
+      "required": ["fragment_id", "media_id", "byte_range", "location", "signature_probe"],
+      "properties": {
+        "fragment_id": { "$ref": "common.schema.json#/$defs/FragmentInstanceId" },
+        "media_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "byte_range": { "$ref": "common.schema.json#/$defs/ByteRange" },
+        "bytes_sha256": {
+          "$ref": "common.schema.json#/$defs/Sha256",
+          "description": "Full SHA-256 digest of the fragment's content bytes over [byte_range.start, byte_range.end). Distinct ranges holding identical bytes still receive distinct fragment IDs."
+        },
+        "location": {
+          "type": "string",
+          "enum": ["allocated", "unallocated", "slack", "tail", "embedded"]
+        },
+        "signature_probe": { "$ref": "#/$defs/SignatureProbe" },
+        "entropy": { "$ref": "#/$defs/Entropy" },
+        "type_likelihoods": { "$ref": "#/$defs/TypeLikelihoods" },
+        "reconstruction": { "$ref": "#/$defs/FragmentReconstruction" },
+        "anomalies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Anomaly" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "SignatureProbe": {
+      "type": "object",
+      "description": "A marker observed inside the fragment (for example an internal JPEG SOS or EOI marker). marker_id shares the VocabId space with signature.signature_id. offset_in_fragment is RELATIVE to the fragment's byte_range.start.",
+      "required": ["matched", "marker_id", "offset_in_fragment"],
+      "properties": {
+        "matched": { "type": "boolean" },
+        "marker_id": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/VocabId" },
+            { "type": "null" }
+          ]
+        },
+        "offset_in_fragment": { "type": "integer", "minimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "matched": { "const": true } }, "required": ["matched"] },
+          "then": { "properties": { "marker_id": { "$ref": "common.schema.json#/$defs/VocabId" } } }
+        },
+        {
+          "if": { "properties": { "matched": { "const": false } }, "required": ["matched"] },
+          "then": { "properties": { "marker_id": { "type": "null" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "TypeLikelihoods": {
+      "type": "object",
+      "description": "Producer-declared likelihoods keyed by ArtifactKind. Keys are constrained to the closed kind vocabulary so consumers never receive an unclassifiable key.",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/ArtifactKind" },
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+    },
+    "FragmentReconstruction": {
+      "type": "object",
+      "required": ["algorithm", "confidence", "byte_contiguity"],
+      "properties": {
+        "group_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "algorithm": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "OPEN vocabulary (reconstruction algorithms evolve). Recommended: contiguous_extent, heuristic_scan, extent_based, header_footer_rejoin."
+        },
+        "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "ordering_confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "byte_contiguity": {
+          "type": "boolean",
+          "description": "True only if the producer deterministically established byte-contiguity. When unsure this MUST be false."
+        },
+        "overlap_bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "ReconstructionGroup": {
+      "type": "object",
+      "description": "A producer-declared reconstruction. byte_contiguity is the SOLE basis for a definitive join; where it is false the group is a candidate or hypothesis only. member_fragment_ids has minItems 1 (frozen M0): singleton groups are legal records and MUST NOT be turned into relationships by a consumer.",
+      "required": [
+        "group_id", "member_fragment_ids", "algorithm",
+        "confidence", "byte_contiguity", "basis"
+      ],
+      "properties": {
+        "group_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "artifact_id": {
+          "oneOf": [
+            { "$ref": "common.schema.json#/$defs/InstanceId" },
+            { "type": "null" }
+          ]
+        },
+        "member_fragment_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/FragmentInstanceId" }
+        },
+        "algorithm": { "type": "string", "maxLength": 64 },
+        "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "ordering": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/FragmentInstanceId" }
+        },
+        "ordering_confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "byte_contiguity": { "type": "boolean" },
+        "overlap_bytes": { "type": "integer", "minimum": 0 },
+        "gaps_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sum over the ordered members of (next.start - previous.end). Verified by the semantic checker."
+        },
+        "basis": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/SanitizedText" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "TimelineEvent": {
+      "type": "object",
+      "description": "A timeline entry is always a DERIVATION from a timestamp, never a direct observation, so status is fixed to COMPUTED. basis_path must resolve to the timestamp it was derived from.",
+      "required": [
+        "event_id", "ts_utc", "ts_precision", "basis_path", "source",
+        "confidence", "status"
+      ],
+      "properties": {
+        "event_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "ts_utc": { "$ref": "common.schema.json#/$defs/IsoUtc" },
+        "ts_precision": { "$ref": "common.schema.json#/$defs/TimestampPrecision" },
+        "basis_path": { "$ref": "common.schema.json#/$defs/EvidenceRef" },
+        "source": { "$ref": "common.schema.json#/$defs/VocabId" },
+        "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "status": { "const": "COMPUTED" }
+      },
+      "additionalProperties": true
+    },
+    "KnownFileMatch": {
+      "type": "object",
+      "description": "Result of matching an artifact hash against a known-file set. known = digest present in the set. no_match = digest definitively absent from a COMPLETE set. unknown = set incomplete or unavailable. STRICT object.",
+      "required": ["artifact_id", "hashset", "result", "basis"],
+      "properties": {
+        "artifact_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "hashset": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "result": { "type": "string", "enum": ["known", "no_match", "unknown"] },
+        "basis": { "type": "string", "enum": ["sha256", "md5", "filename"] }
+      },
+      "additionalProperties": false
+    },
+    "Engine": {
+      "type": "object",
+      "description": "Producer identity for traceability. run_utc is execution metadata and is NOT evidence. STRICT object.",
+      "required": ["name", "version", "determinism"],
+      "properties": {
+        "name": {
+          "$ref": "common.schema.json#/$defs/UntrustedText",
+          "description": "Untrusted free text. Never interpreted, never executed."
+        },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "run_id": { "$ref": "common.schema.json#/$defs/InstanceId" },
+        "run_utc": { "$ref": "common.schema.json#/$defs/IsoUtc" },
+        "determinism": { "type": "string", "enum": ["reproducible", "best_effort"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}
