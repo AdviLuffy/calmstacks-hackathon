@@ -1,3 +1,6 @@
-﻿__pycache__/
+__pycache__/
 *.py[cod]
 .pytest_cache/
+var/
+api/var/
+*.tmp

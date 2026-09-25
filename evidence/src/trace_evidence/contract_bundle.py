@@ -106,6 +106,11 @@ def build_contract_bundle(
     ]
     for w in reconstruction.warnings:
         contract_warnings.append({"code": "RECON_WARNING", "message": str(w)})
+    if not write_blocked:
+        contract_warnings.append({
+            "code": "WRITE_BLOCK_NOT_VERIFIED",
+            "message": "Media was ingested without verified hardware or software write-blocker (A13).",
+        })
 
     case_obj: dict[str, Any] = {
         "case_id": case_id,
@@ -129,11 +134,11 @@ def build_contract_bundle(
                     "kind": "file_copy",
                     "source_ref": media_name,
                     "size_bytes": scan.media_size_bytes,
-                    "write_blocked": write_blocked,
+                    "write_blocked": bool(write_blocked),
                     "acquisition_method": acquisition_method,
                     "image_hashes": {
                         "sha256": scan.media_sha256,
-                        "verified": True,
+                        "verified": bool(write_blocked),
                     },
                 }
             ]

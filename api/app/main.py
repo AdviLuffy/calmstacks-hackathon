@@ -37,8 +37,8 @@ from app.routers import meta as meta_routes
 from app.routers import evidence as evidence_routes
 from app.routers import sessions as session_routes
 from app.routers import dashboard as dashboard_routes
-from app.routers.dashboard_ui import DASHBOARD_HTML
-from starlette.responses import HTMLResponse
+from app.routers.dashboard_ui import DASHBOARD_HTML, FAVICON_SVG, PRIVACY_HTML, TERMS_HTML
+from starlette.responses import HTMLResponse, Response
 from app.schemas.common import api_error_payload, project_warning
 from app.services.interfaces import SessionStore, StageWarning
 from app.services.pipeline import SessionPipeline
@@ -177,6 +177,19 @@ def create_app(
     @application.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
     def serve_dashboard() -> HTMLResponse:
         return HTMLResponse(content=DASHBOARD_HTML)
+
+    @application.get("/privacy", response_class=HTMLResponse, include_in_schema=False)
+    def serve_privacy() -> HTMLResponse:
+        return HTMLResponse(content=PRIVACY_HTML)
+
+    @application.get("/terms", response_class=HTMLResponse, include_in_schema=False)
+    def serve_terms() -> HTMLResponse:
+        return HTMLResponse(content=TERMS_HTML)
+
+    @application.get("/favicon.svg", include_in_schema=False)
+    @application.get("/favicon.ico", include_in_schema=False)
+    def serve_favicon() -> Response:
+        return Response(content=FAVICON_SVG, media_type="image/svg+xml")
 
     return application
 

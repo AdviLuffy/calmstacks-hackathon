@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import uuid
 from pathlib import Path
 from typing import Any, Mapping
@@ -17,6 +18,13 @@ from app.schemas.session import SessionDetail, project_session_detail
 from app.services.interfaces import SessionRecord
 from app.services.session_store import SessionPersistenceError
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+EVIDENCE_SRC = REPO_ROOT / "evidence" / "src"
+if str(EVIDENCE_SRC) not in sys.path:
+    sys.path.insert(0, str(EVIDENCE_SRC))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 # Optional imports for P1 integration if available
 try:
     from trace_evidence.contract_bundle import build_contract_bundle
@@ -27,7 +35,6 @@ except ImportError:
 
 router = APIRouter(tags=["dashboard"])
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES_DIR = REPO_ROOT / "trace" / "contracts" / "fixtures"
 EVIDENCE_DIR = REPO_ROOT / "evidence" / "datasets" / "evidence"
 
@@ -90,16 +97,21 @@ async def carve_raw_evidence(
     settings: SettingsDep,
     file: UploadFile | None = File(None, description="Raw binary disk image or media file"),
     fixture_id: str | None = Form(None, description="ID of a synthetic fixture to carve"),
-    case_id: str = Form("CASE-ATLAS-01", description="Case identifier"),
-    case_title: str = Form("TRACE Forensic Reconstruction", description="Case title"),
-    investigator: str = Form("Investigator", description="Investigator identity"),
+    case_id: str | None = Form(None, description="Case identifier (must match InstanceId format)"),
+    case_title: str | None = Form(None, description="Case title or description"),
+    investigator: str | None = Form(None, description="Investigator / Examiner identity"),
     acquisition_method: str = Form("file_copy", description="Acquisition method"),
-    write_blocked: bool = Form(True, description="Write-blocked acquisition flag"),
+    write_blocked: bool = Form(False, description="Write-blocked acquisition attestation"),
     options: str | None = Form(None, description="Optional JSON options"),
 ) -> SessionDetail:
     """Ingest raw evidence media, run P1 carving & reconstruction, validate P2 contract, and create session."""
     if not P1_AVAILABLE:
         raise HTTPException(status_code=503, detail="P1 Evidence Engine is not available in this environment")
+
+    # Clean case metadata
+    norm_case_id = (case_id or "").strip() or "CASE-01"
+    norm_title = (case_title or "").strip() or "Digital Evidence Examination"
+    norm_investigator = (investigator or "").strip() or None
 
     # Resolve input media bytes and path
     temp_dir = settings.evidence_root
@@ -149,9 +161,9 @@ async def carve_raw_evidence(
             reconstruction=pipeline_result.reconstruction,
             integrity_report=pipeline_result.integrity_report,
             media_path=media_path,
-            case_id=case_id,
-            title=case_title,
-            investigator=investigator,
+            case_id=norm_case_id,
+            title=norm_title,
+            investigator=norm_investigator,
             write_blocked=write_blocked,
             acquisition_method=acquisition_method,
             run_id="RUN-0001",
@@ -161,7 +173,7 @@ async def carve_raw_evidence(
         bundle_bytes = json.dumps(bundle, indent=2, sort_keys=True).encode("utf-8")
 
         # Submit to P3 pipeline
-        record = pipeline.submit(evidence=bundle_bytes, case_id=case_id)
+        record = pipeline.submit(evidence=bundle_bytes, case_id=norm_case_id)
 
         # Store reconstructed PDF bytes and metadata for later inspection/download
         raw_pdf_bytes = pipeline_result.reconstruction.raw_bytes

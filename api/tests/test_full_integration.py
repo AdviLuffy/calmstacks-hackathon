@@ -158,3 +158,77 @@ def test_realistic_fixture_end_to_end(integrated_client):
     assert r_rep.status_code == 200
     report = r_rep.json()
     assert report["report_id"].startswith("RPT-")
+
+
+def test_static_compliance_pages_and_favicon(integrated_client):
+    """Verify that Privacy Policy, Terms of Examination, and Favicon are accessible and compliant."""
+    # Favicon routes
+    r_fav_svg = integrated_client.get("/favicon.svg")
+    assert r_fav_svg.status_code == 200
+    assert "image/svg+xml" in r_fav_svg.headers.get("content-type", "")
+    assert "<svg" in r_fav_svg.text
+
+    r_fav_ico = integrated_client.get("/favicon.ico")
+    assert r_fav_ico.status_code == 200
+    assert "<svg" in r_fav_ico.text
+
+    # Privacy Policy
+    r_priv = integrated_client.get("/privacy")
+    assert r_priv.status_code == 200
+    assert "Privacy Policy &amp; Data Protection" in r_priv.text or "Privacy Policy" in r_priv.text
+    assert "ISO/IEC 27037" in r_priv.text
+    assert "Zero Telemetry" in r_priv.text
+
+    # Terms of Examination
+    r_terms = integrated_client.get("/terms")
+    assert r_terms.status_code == 200
+    assert "Terms of Examination" in r_terms.text
+    assert "Chain of Custody" in r_terms.text
+    assert "Forensic Integrity" in r_terms.text
+
+
+def test_write_block_verification_integrity(integrated_client):
+    """Verify that write_blocked cannot be reported as verified unless explicitly attested."""
+    # Case 1: write_blocked is False (default)
+    r_unverified = integrated_client.post(
+        "/api/sessions/carve",
+        data={
+            "fixture_id": "synthetic_blob",
+            "case_id": "CASE-WB-UNVERIFIED",
+            "write_blocked": False,
+        },
+    )
+    assert r_unverified.status_code == 201
+    sid_unverified = r_unverified.json()["session_id"]
+    r_ev_unverified = integrated_client.get(f"/api/sessions/{sid_unverified}/evidence")
+    assert r_ev_unverified.status_code == 200
+    rec_unverified = integrated_client.app.state.store.get(sid_unverified)
+    assert rec_unverified is not None
+    bundle_unverified = rec_unverified.evidence_bundle
+    media_unverified = bundle_unverified["acquisition"]["media"][0]
+    assert media_unverified["write_blocked"] is False
+    assert media_unverified["image_hashes"]["verified"] is False
+    # Must emit WRITE_BLOCK_NOT_VERIFIED warning in bundle
+    warning_codes = [w.get("code") for w in bundle_unverified.get("warnings", [])]
+    assert "WRITE_BLOCK_NOT_VERIFIED" in warning_codes
+
+    # Case 2: write_blocked is True (explicitly verified)
+    r_verified = integrated_client.post(
+        "/api/sessions/carve",
+        data={
+            "fixture_id": "synthetic_blob",
+            "case_id": "CASE-WB-VERIFIED",
+            "write_blocked": True,
+        },
+    )
+    assert r_verified.status_code == 201
+    sid_verified = r_verified.json()["session_id"]
+    rec_verified = integrated_client.app.state.store.get(sid_verified)
+    assert rec_verified is not None
+    bundle_verified = rec_verified.evidence_bundle
+    media_verified = bundle_verified["acquisition"]["media"][0]
+    assert media_verified["write_blocked"] is True
+    assert media_verified["image_hashes"]["verified"] is True
+    warning_codes_verified = [w.get("code") for w in bundle_verified.get("warnings", [])]
+    assert "WRITE_BLOCK_NOT_VERIFIED" not in warning_codes_verified
+
