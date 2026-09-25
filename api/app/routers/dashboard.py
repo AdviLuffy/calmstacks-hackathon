@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import hashlib
 import json
 import sys
@@ -694,9 +695,10 @@ def get_reconstruction_details(
     if record is None:
         raise SessionNotFoundError(f"no session with id {session_id!r}")
 
-    meta = _RECONSTRUCTED_META.get(session_id)
-    if meta is not None:
-        return meta
+    cached_meta = _RECONSTRUCTED_META.get(session_id)
+    if cached_meta is not None:
+        return cached_meta
+    meta: dict[str, Any] = {}
 
     # Check if bundle has reconstruction extension
     bundle = record.evidence_bundle or {}
@@ -907,9 +909,12 @@ def run_synthetic_repair_action(
 def get_ai_status() -> dict[str, Any]:
     """Get Gemini AI runtime status, model preference order, and privacy settings."""
     settings = load_gemini_settings()
+    configured = bool(settings.enabled and settings.api_key)
     return {
         "enabled": settings.enabled,
         "has_api_key": bool(settings.api_key),
+        "configured": configured,
+        "message": "Configured" if configured else "AI analysis unavailable — configure provider",
         "model_preference_queue": list(settings.model_preference),
         "max_retries": settings.max_retries_per_model,
         "data_minimization_enforced": True,
@@ -934,10 +939,23 @@ def get_session_ai_analysis(
 
     gemini_settings = load_gemini_settings()
     if not gemini_settings.enabled or not gemini_settings.api_key:
-        client = MockGeminiClient()
-    else:
-        client = ResilientGeminiClient(settings=gemini_settings)
+        ai_data = {
+            "success": False,
+            "configured": False,
+            "status": "unavailable",
+            "message": "AI analysis unavailable — configure provider",
+            "explanation": None,
+            "model_used": None,
+            "fallback_occurred": False,
+            "latency_ms": 0.0,
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "error": "No AI API key configured. Set GEMINI_API_KEY to enable intelligent analysis.",
+        }
+        if session_id in _RECONSTRUCTED_META:
+            _RECONSTRUCTED_META[session_id]["ai_analysis"] = ai_data
+        return ai_data
 
+    client = ResilientGeminiClient(settings=gemini_settings)
     ai_service = GeminiForensicService(client=client)
     artifacts = [
         RecoveredArtifact(

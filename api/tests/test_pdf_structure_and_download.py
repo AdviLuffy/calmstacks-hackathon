@@ -366,3 +366,52 @@ def test_4missing_fixture_and_repair_action(integrated_client):
     assert "PIPELINE: PROCESSED" in page_html
 
 
+def test_cold_reconstruction_and_unconfigured_ai_analysis(integrated_client):
+    """Verify cold reconstruction fallback and truthful AI unconfigured state."""
+    from app.routers.dashboard import _RECONSTRUCTED_META
+
+    # 1. Carve a session
+    r_carve = integrated_client.post(
+        "/api/sessions/carve",
+        data={"fixture_id": "visible_text_4missing", "case_id": "CASE-COLD-TEST"},
+    )
+    assert r_carve.status_code == 201
+    session_id = r_carve.json()["session_id"]
+
+    # 2. Simulate cold restart by clearing in-memory meta cache
+    if session_id in _RECONSTRUCTED_META:
+        del _RECONSTRUCTED_META[session_id]
+
+    # 3. GET /reconstruction must gracefully succeed from bundle/disk without NoneType AttributeError
+    r_rec = integrated_client.get(f"/api/sessions/{session_id}/reconstruction")
+    assert r_rec.status_code == 200
+    rec_data = r_rec.json()
+    assert rec_data["session_id"] == session_id
+    assert "status" in rec_data
+    assert "reconstructed_sha256" in rec_data
+    assert "pdf_structure" in rec_data
+
+    # 4. GET /ai-analysis must return unconfigured message when GEMINI_API_KEY is not configured
+    r_ai = integrated_client.get(f"/api/sessions/{session_id}/ai-analysis")
+    assert r_ai.status_code == 200
+    ai_data = r_ai.json()
+    assert ai_data["configured"] is False
+    assert ai_data["status"] == "unavailable"
+    assert ai_data["message"] == "AI analysis unavailable — configure provider"
+    assert ai_data["explanation"] is None
+
+    # 5. Verify investigation page HTML contains robust JS loaders and timeouts
+    r_html = integrated_client.get(f"/investigations/{session_id}")
+    assert r_html.status_code == 200
+    html_text = r_html.text
+    assert "fetchWithTimeout" in html_text
+    assert "loadSessionDetail" in html_text
+    assert "loadEvidenceBundle" in html_text
+    assert "loadReconstructionMetadata" in html_text
+    assert "loadIntelligenceReport" in html_text
+    assert "loadAiAnalysis" in html_text
+    assert "AI analysis unavailable — configure provider" in html_text
+    assert "triggerSyntheticRepair" in html_text
+
+
+

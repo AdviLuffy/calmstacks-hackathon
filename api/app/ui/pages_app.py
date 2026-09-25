@@ -638,19 +638,37 @@ __SUBNAV__
     if (banner) banner.style.display = 'none';
   }
 
-  async function loadOverview() {
-    hideError();
-
-    // 1. Fetch Session Detail
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const sRes = await fetch(`/api/sessions/${SESSION_ID}`);
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      return res;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        throw new Error(`Request timed out after ${timeoutMs / 1000}s`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  // 1. Session Detail Loader
+  async function loadSessionDetail() {
+    try {
+      const sRes = await fetchWithTimeout(`/api/sessions/${SESSION_ID}`, {}, 8000);
       if (!sRes.ok) throw new Error(`HTTP ${sRes.status} fetching session detail`);
       const session = await sRes.json();
 
-      document.getElementById('case-title-display').textContent = session.case_title || 'Digital Evidence Examination';
-      document.getElementById('case-id-val').textContent = session.case_id || 'CASE-01';
-      document.getElementById('investigator-val').textContent = session.investigator || 'Unassigned Examiner';
-      document.getElementById('created-val').textContent = session.submitted_at ? session.submitted_at.substring(0, 19).replace('T', ' ') + 'Z' : '-';
+      const titleEl = document.getElementById('case-title-display');
+      if (titleEl) titleEl.textContent = session.case_title || 'Digital Evidence Examination';
+      const caseEl = document.getElementById('case-id-val');
+      if (caseEl) caseEl.textContent = session.case_id || 'CASE-01';
+      const invEl = document.getElementById('investigator-val');
+      if (invEl) invEl.textContent = session.investigator || 'Unassigned Examiner';
+      const createdEl = document.getElementById('created-val');
+      if (createdEl) createdEl.textContent = session.submitted_at ? session.submitted_at.substring(0, 19).replace('T', ' ') + 'Z' : '-';
 
       if (session.evidence_bytes != null) {
         const origSizeEl = document.getElementById('orig-size-val');
@@ -670,20 +688,16 @@ __SUBNAV__
           pipeTag.className = 'tag tag-amber';
         }
       }
-
-      const sTag = document.getElementById('status-tag');
-      if (sTag) {
-        sTag.textContent = 'RECOVERY: EVALUATING...';
-        sTag.className = 'tag tag-amber';
-      }
     } catch (err) {
       console.error('Session detail error:', err);
       showError(`Session detail error: ${err.message}`);
     }
+  }
 
-    // 2. Fetch Evidence Bundle
+  // 2. Evidence Bundle Metadata Loader
+  async function loadEvidenceBundle() {
     try {
-      const evRes = await fetch(`/api/sessions/${SESSION_ID}/evidence`);
+      const evRes = await fetchWithTimeout(`/api/sessions/${SESSION_ID}/evidence`, {}, 8000);
       if (evRes.ok) {
         const bundle = await evRes.json();
         const media = bundle.acquisition?.media?.[0] || {};
@@ -709,386 +723,394 @@ __SUBNAV__
     } catch (err) {
       console.warn('Evidence bundle metadata fetch warning:', err);
     }
+  }
 
-    // 3. Fetch Reconstruction Metadata
+  // 3. Reconstruction Metadata Loader
+  async function loadReconstructionMetadata() {
+    const stTag = document.getElementById('recon-status-tag');
+    const cardTitle = document.getElementById('artifact-card-title');
+    const cardDesc = document.getElementById('artifact-card-desc');
+    const intactBanner = document.getElementById('intact-distinction-banner');
+    const dlBtn = document.getElementById('btn-download');
+    const viewBtn = document.getElementById('btn-view-inline');
+    const provBtn = document.getElementById('btn-provenance');
+    const s1Title = document.getElementById('stage1-title');
+    const s1Tag = document.getElementById('stage1-tag');
+    const s1Desc = document.getElementById('stage1-desc');
+    const digestLabel = document.getElementById('digest-label');
+    const coverageVal = document.getElementById('coverage-val');
+    const specEl = document.getElementById('recon-spec-status');
+    const shaEl = document.getElementById('recon-sha256');
+    const sizeEl = document.getElementById('recon-size');
+    const fragsEl = document.getElementById('recon-frags');
+
+    // Explicit LOADING state
+    if (stTag) { stTag.textContent = 'LOADING'; stTag.className = 'tag'; }
+    if (shaEl) shaEl.textContent = 'Computing SHA-256 digest...';
+    if (specEl) specEl.textContent = 'Performing structural inspection...';
+
     try {
-      const recRes = await fetch(`/api/sessions/${SESSION_ID}/reconstruction`);
-      const stTag = document.getElementById('recon-status-tag');
-      const cardTitle = document.getElementById('artifact-card-title');
-      const cardDesc = document.getElementById('artifact-card-desc');
-      const intactBanner = document.getElementById('intact-distinction-banner');
-      const dlBtn = document.getElementById('btn-download');
-      const viewBtn = document.getElementById('btn-view-inline');
-      const provBtn = document.getElementById('btn-provenance');
-      const s1Title = document.getElementById('stage1-title');
-      const s1Tag = document.getElementById('stage1-tag');
-      const s1Desc = document.getElementById('stage1-desc');
-      const digestLabel = document.getElementById('digest-label');
-      const coverageVal = document.getElementById('coverage-val');
-      const specEl = document.getElementById('recon-spec-status');
-      const shaEl = document.getElementById('recon-sha256');
-      const sizeEl = document.getElementById('recon-size');
-      const fragsEl = document.getElementById('recon-frags');
-
+      const recRes = await fetchWithTimeout(`/api/sessions/${SESSION_ID}/reconstruction`, {}, 8000);
       if (!recRes.ok) {
-        if (stTag) { stTag.textContent = 'FAILED'; stTag.className = 'tag tag-red'; }
-        if (shaEl) shaEl.textContent = 'UNAVAILABLE';
-        if (sizeEl) sizeEl.textContent = 'N/A';
-        if (fragsEl) fragsEl.textContent = 'N/A';
-        if (coverageVal) { coverageVal.textContent = 'NOT VERIFIED'; coverageVal.style.color = 'var(--text-muted)'; }
-        if (specEl) specEl.innerHTML = '<span style="color: var(--accent-red);">Failed to retrieve reconstruction metadata from backend.</span>';
-        if (dlBtn) { dlBtn.style.opacity = '0.5'; dlBtn.removeAttribute('href'); dlBtn.style.cursor = 'not-allowed'; }
-        if (viewBtn) viewBtn.style.display = 'none';
-        showError('Reconstruction metadata endpoint returned HTTP ' + recRes.status);
-      } else {
-        const recon = await recRes.json();
+        throw new Error(`HTTP ${recRes.status} retrieving reconstruction telemetry`);
+      }
+      const recon = await recRes.json();
 
-        // Update evidence filename/size from recon if not yet set
-        if (recon.media_source) {
-          const origFileEl = document.getElementById('orig-file-val');
-          if (origFileEl && (origFileEl.textContent === '…' || origFileEl.textContent === '...')) {
-            origFileEl.textContent = recon.media_source;
+      // Update evidence filename/size from recon if not yet set
+      if (recon.media_source) {
+        const origFileEl = document.getElementById('orig-file-val');
+        if (origFileEl && (origFileEl.textContent === '…' || origFileEl.textContent === '...')) {
+          origFileEl.textContent = recon.media_source;
+        }
+      }
+      if (recon.media_size_bytes != null) {
+        const origSizeEl = document.getElementById('orig-size-val');
+        if (origSizeEl && (origSizeEl.textContent === '…' || origSizeEl.textContent === '...')) {
+          origSizeEl.textContent = `${Number(recon.media_size_bytes).toLocaleString()} bytes`;
+        }
+      }
+
+      if (recon.write_blocked !== undefined) {
+        const wbTag = document.getElementById('wb-tag');
+        if (wbTag) {
+          if (recon.write_blocked) {
+            wbTag.textContent = 'WRITE-BLOCK: ATTESTED';
+            wbTag.className = 'tag tag-green';
+          } else {
+            wbTag.textContent = 'WRITE-BLOCK: UNVERIFIED (A13)';
+            wbTag.className = 'tag tag-amber';
           }
         }
-        if (recon.media_size_bytes != null) {
-          const origSizeEl = document.getElementById('orig-size-val');
-          if (origSizeEl && (origSizeEl.textContent === '…' || origSizeEl.textContent === '...')) {
-            origSizeEl.textContent = `${Number(recon.media_size_bytes).toLocaleString()} bytes`;
+      }
+
+      const artifactDigest = recon.reconstructed_sha256 || recon.partial_sha256 || 'UNAVAILABLE';
+      if (shaEl) shaEl.textContent = artifactDigest;
+      if (sizeEl) sizeEl.textContent = recon.pdf_size_bytes != null ? `${Number(recon.pdf_size_bytes).toLocaleString()} bytes` : '0 bytes';
+
+      if (recon.is_intact_passthrough) {
+        if (stTag) { stTag.textContent = 'INTACT VERIFIED'; stTag.className = 'tag tag-green'; }
+        if (cardTitle) cardTitle.textContent = '[PASSTHROUGH] Intact Document Verification';
+        if (cardDesc) cardDesc.textContent = 'Original document bitstream validated as an intact, complete PDF. Exact original bytes preserved without block carving, sector slicing, or fragment reconstruction.';
+        if (intactBanner) intactBanner.style.display = 'block';
+        if (dlBtn) {
+          dlBtn.innerHTML = '&darr; Download Verified Original PDF';
+          dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
+          dlBtn.style.opacity = '1';
+          dlBtn.style.cursor = 'pointer';
+        }
+        if (viewBtn) {
+          viewBtn.style.display = 'inline-flex';
+          viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
+        }
+        if (provBtn) provBtn.textContent = 'View Bitstream Ledger \u2192';
+        if (digestLabel) digestLabel.textContent = 'ORIGINAL BITSTREAM SHA-256:';
+        if (coverageVal) {
+          coverageVal.textContent = '100% (INTACT STREAM)';
+          coverageVal.style.color = 'var(--accent-green)';
+        }
+        if (fragsEl) fragsEl.textContent = '0 (Intact Stream Passthrough)';
+        if (s1Title) s1Title.textContent = 'STAGE 1: INTACT BITSTREAM VALIDATION';
+        if (s1Tag) { s1Tag.textContent = 'PASSTHROUGH VERIFIED'; s1Tag.className = 'tag tag-green'; }
+        if (s1Desc) s1Desc.textContent = 'Direct ISO 32000-1 syntax validation. Preserved original byte stream without block carving or fragment assembly.';
+        if (specEl) {
+          specEl.innerHTML = '<strong>ISO 32000-1 STRUCTURALLY VALID:</strong> Complete, unfragmented PDF bitstream ingested directly. Exact source bytes preserved.';
+        }
+      } else if (recon.complete && (recon.status === 'structurally_valid' || recon.is_verified)) {
+        if (stTag) { stTag.textContent = 'STRUCTURALLY VALID'; stTag.className = 'tag tag-green'; }
+        if (cardTitle) cardTitle.textContent = '[P1] Reconstructed Byte Artifact';
+        if (cardDesc) cardDesc.textContent = 'Authentic PDF byte reconstruction assembled deterministically from carved fragments without synthetic interpolation.';
+        if (intactBanner) intactBanner.style.display = 'none';
+        if (dlBtn) {
+          dlBtn.innerHTML = '&darr; Download Reconstructed PDF';
+          dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
+          dlBtn.style.opacity = '1';
+          dlBtn.style.cursor = 'pointer';
+        }
+        if (viewBtn) {
+          viewBtn.style.display = 'inline-flex';
+          viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
+        }
+        if (provBtn) provBtn.textContent = 'View Provenance Ledger \u2192';
+        if (digestLabel) digestLabel.textContent = 'RECONSTRUCTED ARTIFACT SHA-256:';
+        if (coverageVal) {
+          coverageVal.textContent = '100% COVERAGE (RECONSTRUCTED)';
+          coverageVal.style.color = 'var(--accent-green)';
+        }
+        if (fragsEl) fragsEl.textContent = `${recon.fragments_placed || 0} / ${recon.fragments_carved || 0} placed`;
+        if (s1Tag) { s1Tag.textContent = 'VERIFIED'; s1Tag.className = 'tag tag-green'; }
+        if (s1Desc) s1Desc.textContent = 'Deterministic block carving, PDF marker parsing, and authentic byte assembly completed.';
+        if (specEl) {
+          if (recon.pdf_structure) {
+            const ps = recon.pdf_structure;
+            specEl.innerHTML = `<strong>${escapeHtml(ps.specification_status || 'STRUCTURALLY VALID')}</strong> &bull; MediaBox: [${(ps.mediabox || [0,0,612,792]).join(' ')}] &bull; Objects: ${ps.object_count || 'N/A'}`;
+          } else {
+            specEl.textContent = 'ISO 32000-1 compliant byte stream verified.';
+          }
+        }
+      } else if (recon.status === 'incomplete' || !recon.complete) {
+        const unplaced = recon.unplaced_fragments_count || 0;
+        const placed = recon.fragments_placed || 0;
+        const carved = recon.fragments_carved || 0;
+
+        if (stTag) {
+          stTag.textContent = placed > 0 ? `PARTIAL (${unplaced} UNPLACED)` : 'INCOMPLETE (0 PLACED)';
+          stTag.className = placed > 0 ? 'tag tag-amber' : 'tag tag-red';
+        }
+        if (cardTitle) cardTitle.textContent = '[P1] Incomplete Fragment Reconstruction';
+        if (cardDesc) cardDesc.textContent = `Partial assembly: ${unplaced} fragment(s) remain unplaced. Reconstruction halted to prevent unverified fabrication. Output is partial and unverified.`;
+        if (intactBanner) intactBanner.style.display = 'none';
+        if (digestLabel) digestLabel.textContent = placed > 0 ? 'PARTIAL RECONSTRUCTION SHA-256:' : 'ARTIFACT SHA-256 (UNAVAILABLE):';
+
+        if (coverageVal) {
+          if (placed === 0) {
+            coverageVal.textContent = '0% (NO VALID CHAINS)';
+            coverageVal.style.color = 'var(--accent-red)';
+          } else {
+            const pct = carved > 0 ? Math.round((placed / carved) * 100) : 0;
+            coverageVal.textContent = `${pct}% (PARTIAL / UNVERIFIED)`;
+            coverageVal.style.color = 'var(--accent-amber)';
           }
         }
 
-        if (recon.write_blocked !== undefined) {
-          const wbTag = document.getElementById('wb-tag');
-          if (wbTag) {
-            if (recon.write_blocked) {
-              wbTag.textContent = 'WRITE-BLOCK: ATTESTED';
-              wbTag.className = 'tag tag-green';
-            } else {
-              wbTag.textContent = 'WRITE-BLOCK: UNVERIFIED (A13)';
-              wbTag.className = 'tag tag-amber';
+        if (dlBtn) {
+          if (placed === 0) {
+            dlBtn.innerHTML = '&#9888; Reconstruction Halted (0 Placed)';
+            dlBtn.className = 'btn btn-secondary';
+            dlBtn.removeAttribute('href');
+            dlBtn.style.cursor = 'not-allowed';
+            dlBtn.style.opacity = '0.6';
+            if (viewBtn) viewBtn.style.display = 'none';
+          } else {
+            dlBtn.innerHTML = '&darr; Download Partial PDF (Unverified)';
+            dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
+            dlBtn.style.opacity = '1';
+            dlBtn.style.cursor = 'pointer';
+            if (viewBtn) {
+              viewBtn.style.display = 'inline-flex';
+              viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
             }
           }
         }
 
-        const artifactDigest = recon.reconstructed_sha256 || recon.partial_sha256 || 'UNAVAILABLE';
-        if (shaEl) shaEl.textContent = artifactDigest;
-        if (sizeEl) sizeEl.textContent = recon.pdf_size_bytes != null ? `${Number(recon.pdf_size_bytes).toLocaleString()} bytes` : '0 bytes';
+        if (fragsEl) fragsEl.textContent = `${placed} / ${carved} placed (${unplaced} unplaced)`;
 
+        if (s1Tag) {
+          s1Tag.textContent = placed > 0 ? 'PARTIAL' : 'FAILED';
+          s1Tag.className = placed > 0 ? 'tag tag-amber' : 'tag tag-red';
+        }
+        if (s1Desc) {
+          if (placed === 0) {
+            s1Desc.textContent = 'Reconstruction halted: No valid PDF header (%PDF-) or traversable chains detected in input media.';
+          } else {
+            s1Desc.textContent = `Reconstruction halted: ${unplaced} unplaced fragment(s). Authentic ordering could not be mathematically guaranteed.`;
+          }
+        }
+
+        if (specEl) {
+          let extraNotice = '';
+          if (recon.missing_elements && recon.missing_elements.length > 0) {
+            extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-amber);"><strong>Missing Structural Elements:</strong> ${recon.missing_elements.map(e => `&bull; ${escapeHtml(e)}`).join(' ')}</div>`;
+          }
+          if (recon.corrupted_fragment_ids && recon.corrupted_fragment_ids.length > 0) {
+            extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-red);"><strong>Detected Integrity Corruption:</strong> Frag IDs: ${recon.corrupted_fragment_ids.join(', ')}</div>`;
+          }
+          if (placed === 0) {
+            specEl.innerHTML = '<span style="color: var(--accent-red);"><strong>UNRECOGNIZED INPUT:</strong> No valid PDF header or structural markers detected in media.</span>' + extraNotice;
+          } else {
+            specEl.innerHTML = `<span style="color: var(--accent-amber);"><strong>RECONSTRUCTION PARTIAL:</strong> ${unplaced} fragment(s) remain unplaced. Structural integrity unverified.</span>` + extraNotice;
+          }
+        }
+      }
+
+      const topCaseTag = document.getElementById('status-tag');
+      if (topCaseTag) {
         if (recon.is_intact_passthrough) {
-          if (stTag) { stTag.textContent = 'INTACT VERIFIED'; stTag.className = 'tag tag-green'; }
-          if (cardTitle) cardTitle.textContent = '[PASSTHROUGH] Intact Document Verification';
-          if (cardDesc) cardDesc.textContent = 'Original document bitstream validated as an intact, complete PDF. Exact original bytes preserved without block carving, sector slicing, or fragment reconstruction.';
-          if (intactBanner) intactBanner.style.display = 'block';
-          if (dlBtn) {
-            dlBtn.innerHTML = '&darr; Download Verified Original PDF';
-            dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
-            dlBtn.style.opacity = '1';
-            dlBtn.style.cursor = 'pointer';
-          }
-          if (viewBtn) {
-            viewBtn.style.display = 'inline-flex';
-            viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
-          }
-          if (provBtn) provBtn.textContent = 'View Bitstream Ledger \u2192';
-          if (digestLabel) digestLabel.textContent = 'ORIGINAL BITSTREAM SHA-256:';
-          if (coverageVal) {
-            coverageVal.textContent = '100% (INTACT STREAM)';
-            coverageVal.style.color = 'var(--accent-green)';
-          }
-          if (fragsEl) fragsEl.textContent = '0 (Intact Stream Passthrough)';
-          if (s1Title) s1Title.textContent = 'STAGE 1: INTACT BITSTREAM VALIDATION';
-          if (s1Tag) { s1Tag.textContent = 'PASSTHROUGH VERIFIED'; s1Tag.className = 'tag tag-green'; }
-          if (s1Desc) s1Desc.textContent = 'Direct ISO 32000-1 syntax validation. Preserved original byte stream without block carving or fragment assembly.';
-          if (specEl) {
-            specEl.innerHTML = '<strong>ISO 32000-1 STRUCTURALLY VALID:</strong> Complete, unfragmented PDF bitstream ingested directly. Exact source bytes preserved.';
-          }
-        } else if (recon.complete && (recon.status === 'structurally_valid' || recon.is_verified)) {
-          if (stTag) { stTag.textContent = 'STRUCTURALLY VALID'; stTag.className = 'tag tag-green'; }
-          if (cardTitle) cardTitle.textContent = '[P1] Reconstructed Byte Artifact';
-          if (cardDesc) cardDesc.textContent = 'Authentic PDF byte reconstruction assembled deterministically from carved fragments without synthetic interpolation.';
-          if (intactBanner) intactBanner.style.display = 'none';
-          if (dlBtn) {
-            dlBtn.innerHTML = '&darr; Download Reconstructed PDF';
-            dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
-            dlBtn.style.opacity = '1';
-            dlBtn.style.cursor = 'pointer';
-          }
-          if (viewBtn) {
-            viewBtn.style.display = 'inline-flex';
-            viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
-          }
-          if (provBtn) provBtn.textContent = 'View Provenance Ledger \u2192';
-          if (digestLabel) digestLabel.textContent = 'RECONSTRUCTED ARTIFACT SHA-256:';
-          if (coverageVal) {
-            coverageVal.textContent = '100% COVERAGE (RECONSTRUCTED)';
-            coverageVal.style.color = 'var(--accent-green)';
-          }
-          if (fragsEl) fragsEl.textContent = `${recon.fragments_placed || 0} / ${recon.fragments_carved || 0} placed`;
-          if (s1Tag) { s1Tag.textContent = 'VERIFIED'; s1Tag.className = 'tag tag-green'; }
-          if (s1Desc) s1Desc.textContent = 'Deterministic block carving, PDF marker parsing, and authentic byte assembly completed.';
-          if (specEl) {
-            if (recon.pdf_structure) {
-              const ps = recon.pdf_structure;
-              specEl.innerHTML = `<strong>${escapeHtml(ps.specification_status || 'STRUCTURALLY VALID')}</strong> &bull; MediaBox: [${(ps.mediabox || [0,0,612,792]).join(' ')}] &bull; Objects: ${ps.object_count || 'N/A'}`;
-            } else {
-              specEl.textContent = 'ISO 32000-1 compliant byte stream verified.';
-            }
-          }
-        } else if (recon.status === 'incomplete' || !recon.complete) {
+          topCaseTag.textContent = 'INTACT VERIFIED';
+          topCaseTag.className = 'tag tag-green';
+          topCaseTag.style = '';
+        } else if (recon.complete && recon.is_verified) {
+          topCaseTag.textContent = 'RECOVERY: 100% VERIFIED';
+          topCaseTag.className = 'tag tag-green';
+          topCaseTag.style = '';
+        } else if (recon.has_repaired_file && recon.repaired_is_openable) {
+          topCaseTag.textContent = 'SYNTHETIC REPAIR (DEMO)';
+          topCaseTag.className = 'tag';
+          topCaseTag.style.background = 'rgba(168, 85, 247, 0.2)';
+          topCaseTag.style.color = '#e9d5ff';
+          topCaseTag.style.border = '1px solid rgba(168, 85, 247, 0.5)';
+        } else if (recon.status === 'incomplete' || (recon.recovery_state && recon.recovery_state.includes('PARTIAL')) || (recon.unplaced_fragments_count > 0)) {
           const unplaced = recon.unplaced_fragments_count || 0;
-          const placed = recon.fragments_placed || 0;
-          const carved = recon.fragments_carved || 0;
-
-          if (stTag) {
-            stTag.textContent = placed > 0 ? `PARTIAL (${unplaced} UNPLACED)` : 'INCOMPLETE (0 PLACED)';
-            stTag.className = placed > 0 ? 'tag tag-amber' : 'tag tag-red';
-          }
-          if (cardTitle) cardTitle.textContent = '[P1] Incomplete Fragment Reconstruction';
-          if (cardDesc) cardDesc.textContent = `Partial assembly: ${unplaced} fragment(s) remain unplaced. Reconstruction halted to prevent unverified fabrication. Output is partial and unverified.`;
-          if (intactBanner) intactBanner.style.display = 'none';
-          if (digestLabel) digestLabel.textContent = placed > 0 ? 'PARTIAL RECONSTRUCTION SHA-256:' : 'ARTIFACT SHA-256 (UNAVAILABLE):';
-
-          if (coverageVal) {
-            if (placed === 0) {
-              coverageVal.textContent = '0% (NO VALID CHAINS)';
-              coverageVal.style.color = 'var(--accent-red)';
-            } else {
-              const pct = carved > 0 ? Math.round((placed / carved) * 100) : 0;
-              coverageVal.textContent = `${pct}% (PARTIAL / UNVERIFIED)`;
-              coverageVal.style.color = 'var(--accent-amber)';
-            }
-          }
-
-          if (dlBtn) {
-            if (placed === 0) {
-              dlBtn.innerHTML = '&#9888; Reconstruction Halted (0 Placed)';
-              dlBtn.className = 'btn btn-secondary';
-              dlBtn.removeAttribute('href');
-              dlBtn.style.cursor = 'not-allowed';
-              dlBtn.style.opacity = '0.6';
-              if (viewBtn) viewBtn.style.display = 'none';
-            } else {
-              dlBtn.innerHTML = '&darr; Download Partial PDF (Unverified)';
-              dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
-              dlBtn.style.opacity = '1';
-              dlBtn.style.cursor = 'pointer';
-              if (viewBtn) {
-                viewBtn.style.display = 'inline-flex';
-                viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
-              }
-            }
-          }
-
-          if (fragsEl) fragsEl.textContent = `${placed} / ${carved} placed (${unplaced} unplaced)`;
-
-          if (s1Tag) {
-            s1Tag.textContent = placed > 0 ? 'PARTIAL' : 'FAILED';
-            s1Tag.className = placed > 0 ? 'tag tag-amber' : 'tag tag-red';
-          }
-          if (s1Desc) {
-            if (placed === 0) {
-              s1Desc.textContent = 'Reconstruction halted: No valid PDF header (%PDF-) or traversable chains detected in input media.';
-            } else {
-              s1Desc.textContent = `Reconstruction halted: ${unplaced} unplaced fragment(s). Authentic ordering could not be mathematically guaranteed.`;
-            }
-          }
-
-          if (specEl) {
-            let extraNotice = '';
-            if (recon.missing_elements && recon.missing_elements.length > 0) {
-              extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-amber);"><strong>Missing Structural Elements:</strong> ${recon.missing_elements.map(e => `&bull; ${escapeHtml(e)}`).join(' ')}</div>`;
-            }
-            if (recon.corrupted_fragment_ids && recon.corrupted_fragment_ids.length > 0) {
-              extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-red);"><strong>Detected Integrity Corruption:</strong> Frag IDs: ${recon.corrupted_fragment_ids.join(', ')}</div>`;
-            }
-            if (placed === 0) {
-              specEl.innerHTML = '<span style="color: var(--accent-red);"><strong>UNRECOGNIZED INPUT:</strong> No valid PDF header or structural markers detected in media.</span>' + extraNotice;
-            } else {
-              specEl.innerHTML = `<span style="color: var(--accent-amber);"><strong>RECONSTRUCTION PARTIAL:</strong> ${unplaced} fragment(s) remain unplaced. Structural integrity unverified.</span>` + extraNotice;
-            }
-          }
+          topCaseTag.textContent = unplaced > 0 ? `PARTIAL RECOVERY (${unplaced} UNPLACED)` : 'PARTIAL RECOVERY';
+          topCaseTag.className = 'tag tag-amber';
+          topCaseTag.style = '';
+        } else if (recon.status === 'corrupted' || (recon.recovery_state && recon.recovery_state.includes('CORRUPTED'))) {
+          topCaseTag.textContent = 'RECOVERY: CORRUPTED';
+          topCaseTag.className = 'tag tag-red';
+          topCaseTag.style = '';
         } else {
-          if (stTag) {
-            stTag.textContent = (recon.status || 'NOT VERIFIED').toUpperCase();
-            stTag.className = 'tag tag-copper';
-          }
-          if (coverageVal) {
-            coverageVal.textContent = 'NOT VERIFIED';
-            coverageVal.style.color = 'var(--text-muted)';
-          }
+          topCaseTag.textContent = 'RECOVERY: UNVERIFIED';
+          topCaseTag.className = 'tag tag-copper';
+          topCaseTag.style = '';
         }
+      }
 
-        const topCaseTag = document.getElementById('status-tag');
-        if (topCaseTag) {
-          if (recon.is_intact_passthrough) {
-            topCaseTag.textContent = 'INTACT VERIFIED';
-            topCaseTag.className = 'tag tag-green';
-            topCaseTag.style = '';
-          } else if (recon.complete && recon.is_verified) {
-            topCaseTag.textContent = 'RECOVERY: 100% VERIFIED';
-            topCaseTag.className = 'tag tag-green';
-            topCaseTag.style = '';
-          } else if (recon.has_repaired_file && recon.repaired_is_openable) {
-            topCaseTag.textContent = 'SYNTHETIC REPAIR (DEMO)';
-            topCaseTag.className = 'tag';
-            topCaseTag.style.background = 'rgba(168, 85, 247, 0.2)';
-            topCaseTag.style.color = '#e9d5ff';
-            topCaseTag.style.border = '1px solid rgba(168, 85, 247, 0.5)';
-          } else if (recon.status === 'incomplete' || (recon.recovery_state && recon.recovery_state.includes('PARTIAL')) || (recon.unplaced_fragments_count > 0)) {
-            const unplaced = recon.unplaced_fragments_count || 0;
-            topCaseTag.textContent = unplaced > 0 ? `PARTIAL RECOVERY (${unplaced} UNPLACED)` : 'PARTIAL RECOVERY';
-            topCaseTag.className = 'tag tag-amber';
-            topCaseTag.style = '';
-          } else if (recon.status === 'corrupted' || (recon.recovery_state && recon.recovery_state.includes('CORRUPTED'))) {
-            topCaseTag.textContent = 'RECOVERY: CORRUPTED';
-            topCaseTag.className = 'tag tag-red';
-            topCaseTag.style = '';
-          } else {
-            topCaseTag.textContent = 'RECOVERY: UNVERIFIED';
-            topCaseTag.className = 'tag tag-copper';
-            topCaseTag.style = '';
-          }
+      if (recon.recovery_state && stTag) {
+        stTag.textContent = recon.recovery_state.toUpperCase();
+        if (recon.recovery_state.includes('ORIGINAL BYTES RECOVERED AND VERIFIED') || recon.recovery_state === 'COMPLETE AND VERIFIED') {
+          stTag.className = 'tag tag-green';
+          stTag.style = '';
+        } else if (recon.recovery_state.includes('SYNTHETICALLY REPAIRED') || recon.recovery_state.includes('SYNTHETIC REPAIR')) {
+          stTag.className = 'tag';
+          stTag.style.background = 'rgba(168, 85, 247, 0.2)';
+          stTag.style.color = '#e9d5ff';
+          stTag.style.border = '1px solid rgba(168, 85, 247, 0.5)';
+        } else if (recon.recovery_state.includes('PARTIAL')) {
+          stTag.className = 'tag tag-amber';
+          stTag.style = '';
+        } else if (recon.recovery_state.includes('INVALID') || recon.recovery_state === 'CORRUPTED') {
+          stTag.className = 'tag tag-red';
+          stTag.style = '';
+        } else {
+          stTag.className = 'tag tag-copper';
+          stTag.style = '';
         }
+      }
 
-        if (recon.recovery_state && stTag) {
-          stTag.textContent = recon.recovery_state.toUpperCase();
-          if (recon.recovery_state.includes('ORIGINAL BYTES RECOVERED AND VERIFIED') || recon.recovery_state === 'COMPLETE AND VERIFIED') {
-            stTag.className = 'tag tag-green';
-            stTag.style = '';
-          } else if (recon.recovery_state.includes('SYNTHETICALLY REPAIRED') || recon.recovery_state.includes('SYNTHETIC REPAIR')) {
-            stTag.className = 'tag';
-            stTag.style.background = 'rgba(168, 85, 247, 0.2)';
-            stTag.style.color = '#e9d5ff';
-            stTag.style.border = '1px solid rgba(168, 85, 247, 0.5)';
-          } else if (recon.recovery_state.includes('PARTIAL')) {
-            stTag.className = 'tag tag-amber';
-            stTag.style = '';
-          } else if (recon.recovery_state.includes('INVALID') || recon.recovery_state === 'CORRUPTED') {
-            stTag.className = 'tag tag-red';
-            stTag.style = '';
-          } else {
-            stTag.className = 'tag tag-copper';
-            stTag.style = '';
-          }
+      // If synthetic repair produced an openable PDF, provide prominent access and honest provenance
+      if (recon.has_repaired_file && !recon.complete) {
+        if (dlBtn) {
+          dlBtn.innerHTML = '&darr; Download Repaired PDF (Demo)';
+          dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired`);
+          dlBtn.className = 'btn btn-primary';
+          dlBtn.style.opacity = '1';
+          dlBtn.style.cursor = 'pointer';
+          dlBtn.style.background = '#9333ea';
+          dlBtn.style.borderColor = '#a855f7';
         }
-
-        // If synthetic repair produced an openable PDF, provide prominent access and honest provenance
-        if (recon.has_repaired_file && !recon.complete) {
-          if (dlBtn) {
-            dlBtn.innerHTML = '&darr; Download Repaired PDF (Demo)';
-            dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired`);
-            dlBtn.className = 'btn btn-primary';
-            dlBtn.style.opacity = '1';
-            dlBtn.style.cursor = 'pointer';
-            dlBtn.style.background = '#9333ea';
-            dlBtn.style.borderColor = '#a855f7';
-          }
-          if (viewBtn) {
-            viewBtn.style.display = 'inline-flex';
-            viewBtn.innerHTML = '&#128065; View Repaired PDF (Demo)';
-            viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view?mode=repaired`);
-          }
-          if (specEl) {
-            const txt = recon.repaired_extracted_text ? ` &bull; Verified Text: "${escapeHtml(recon.repaired_extracted_text)}"` : '';
-            specEl.innerHTML = `
-              <div style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 3px; padding: 0.85rem; margin-top: 0.5rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; flex-wrap: wrap; gap: 0.5rem;">
-                  <span class="tag" style="background: rgba(168, 85, 247, 0.25); color: #f3e8ff; border: 1px solid rgba(168, 85, 247, 0.6); font-weight: 700;">
-                    SYNTHETIC REPAIR (DEMO)
-                  </span>
-                  <span style="font-family: var(--font-mono); font-size: 11px; color: #d8b4fe;">
-                    ${recon.repaired_pdf_size || 'N/A'} bytes &bull; ${recon.repaired_page_count || 1} page${txt}
-                  </span>
-                </div>
-                <div style="font-weight: 700; color: #f3e8ff; font-family: var(--font-mono); font-size: 12px; margin-bottom: 0.35rem;">
-                  SYNTHETICALLY REPAIRED — NOT BYTE-IDENTICAL TO ORIGINAL
-                </div>
-                <div style="font-size: 11.5px; color: var(--text-secondary); line-height: 1.5;">
-                  Original recovered objects preserved without alteration. Rebuilt cross-reference table (xref), trailer dictionary, startxref pointer, and %%EOF terminator to allow document rendering in Adobe Acrobat and standard readers.<br>
-                  <span style="color: var(--text-muted); font-size: 11px;">[Forensic Ledger] Recovered evidence: ${recon.fragments_placed || 0} fragments (${recon.pdf_size_bytes} B) &bull; Synthesized syntax: ${recon.synthesized_bytes_count || 0} B &bull; Byte-identical to ground truth: FALSE &bull; Authenticity claimed: NONE for generated bytes.</span>
-                </div>
-                <div style="margin-top: 0.65rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                  <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 0.35rem 0.75rem; background: #9333ea; border-color: #a855f7;">&darr; Download Repaired PDF (Demo)</a>
-                  <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=raw" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 0.35rem 0.75rem;">&darr; Download Raw Partial Bytes (${recon.pdf_size_bytes} B)</a>
-                </div>
+        if (viewBtn) {
+          viewBtn.style.display = 'inline-flex';
+          viewBtn.innerHTML = '&#128065; View Repaired PDF (Demo)';
+          viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view?mode=repaired`);
+        }
+        if (specEl) {
+          const txt = recon.repaired_extracted_text ? ` &bull; Verified Text: "${escapeHtml(recon.repaired_extracted_text)}"` : '';
+          specEl.innerHTML = `
+            <div style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 3px; padding: 0.85rem; margin-top: 0.5rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; flex-wrap: wrap; gap: 0.5rem;">
+                <span class="tag" style="background: rgba(168, 85, 247, 0.25); color: #f3e8ff; border: 1px solid rgba(168, 85, 247, 0.6); font-weight: 700;">
+                  SYNTHETIC REPAIR (DEMO)
+                </span>
+                <span style="font-family: var(--font-mono); font-size: 11px; color: #d8b4fe;">
+                  ${recon.repaired_pdf_size || 'N/A'} bytes &bull; ${recon.repaired_page_count || 1} page${txt}
+                </span>
               </div>
-            `;
-          }
-        } else if (!recon.complete && (!recon.has_repaired_file || !recon.repaired_is_openable)) {
-          if (specEl) {
-            let extraNotice = '';
-            if (recon.missing_elements && recon.missing_elements.length > 0) {
-              extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-amber);"><strong>Missing Structural Elements:</strong> ${recon.missing_elements.map(e => `&bull; ${escapeHtml(e)}`).join(' ')}</div>`;
-            }
-            const unplaced = recon.unplaced_fragments_count || 0;
-            specEl.innerHTML = `
-              <div style="margin-bottom: 0.5rem;">
-                <span style="color: var(--accent-amber);"><strong>RECONSTRUCTION PARTIAL:</strong> ${unplaced} fragment(s) unplaced. Missing structural trailer/pointers prevent opening.</span>
-                ${extraNotice}
+              <div style="font-weight: 700; color: #f3e8ff; font-family: var(--font-mono); font-size: 12px; margin-bottom: 0.35rem;">
+                SYNTHETICALLY REPAIRED — NOT BYTE-IDENTICAL TO ORIGINAL
               </div>
-              <div style="background: rgba(168, 85, 247, 0.08); border: 1px dashed rgba(168, 85, 247, 0.4); border-radius: 3px; padding: 0.75rem; margin-top: 0.5rem;">
-                <div style="font-size: 12px; color: #e9d5ff; margin-bottom: 0.4rem;">
-                  <strong>Synthetic Repair (Demo) Action Available:</strong><br>
-                  Repair the PDF structure using PDF parser reconstruction to rebuild the cross-reference table, trailer, startxref, and EOF.
-                </div>
-                <button type="button" onclick="triggerSyntheticRepair()" class="btn btn-primary btn-sm" id="btn-trigger-repair" style="font-size: 11.5px; padding: 0.35rem 0.85rem; background: #9333ea; border-color: #a855f7;">
-                  &#9874; Run Synthetic Repair (Demo)
-                </button>
+              <div style="font-size: 11.5px; color: var(--text-secondary); line-height: 1.5;">
+                Original recovered objects preserved without alteration. Rebuilt cross-reference table (xref), trailer dictionary, startxref pointer, and %%EOF terminator to allow document rendering in Adobe Acrobat and standard readers.<br>
+                <span style="color: var(--text-muted); font-size: 11px;">[Forensic Ledger] Recovered evidence: ${recon.fragments_placed || 0} fragments (${recon.pdf_size_bytes} B) &bull; Synthesized syntax: ${recon.synthesized_bytes_count || 0} B &bull; Byte-identical to ground truth: FALSE &bull; Authenticity claimed: NONE for generated bytes.</span>
               </div>
-            `;
-          }
+              <div style="margin-top: 0.65rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 0.35rem 0.75rem; background: #9333ea; border-color: #a855f7;">&darr; Download Repaired PDF (Demo)</a>
+                <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=raw" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 0.35rem 0.75rem;">&darr; Download Raw Partial Bytes (${recon.pdf_size_bytes} B)</a>
+              </div>
+            </div>
+          `;
         }
+      } else if (!recon.complete && (!recon.has_repaired_file || !recon.repaired_is_openable)) {
+        if (specEl) {
+          let extraNotice = '';
+          if (recon.missing_elements && recon.missing_elements.length > 0) {
+            extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-amber);"><strong>Missing Structural Elements:</strong> ${recon.missing_elements.map(e => `&bull; ${escapeHtml(e)}`).join(' ')}</div>`;
+          }
+          const unplaced = recon.unplaced_fragments_count || 0;
+          specEl.innerHTML = `
+            <div style="margin-bottom: 0.5rem;">
+              <span style="color: var(--accent-amber);"><strong>RECONSTRUCTION PARTIAL:</strong> ${unplaced} fragment(s) unplaced. Missing structural trailer/pointers prevent opening.</span>
+              ${extraNotice}
+            </div>
+            <div style="background: rgba(168, 85, 247, 0.08); border: 1px dashed rgba(168, 85, 247, 0.4); border-radius: 3px; padding: 0.75rem; margin-top: 0.5rem;">
+              <div style="font-size: 12px; color: #e9d5ff; margin-bottom: 0.4rem;">
+                <strong>Synthetic Repair (Demo) Action Available:</strong><br>
+                Repair the PDF structure using PDF parser reconstruction to rebuild the cross-reference table, trailer, startxref, and EOF.
+              </div>
+              <button type="button" onclick="triggerSyntheticRepair()" class="btn btn-primary btn-sm" id="btn-trigger-repair" style="font-size: 11.5px; padding: 0.35rem 0.85rem; background: #9333ea; border-color: #a855f7;">
+                &#9874; Run Synthetic Repair (Demo)
+              </button>
+            </div>
+          `;
+        }
+      }
 
-        // Render multi-format carved artifacts table if available
-        if (recon.artifacts && recon.artifacts.length > 0) {
-          const artPanel = document.getElementById('multi-artifacts-panel');
-          const artCont = document.getElementById('multi-artifacts-container');
-          const artCountTag = document.getElementById('artifacts-count-tag');
-          if (artPanel && artCont) {
-            artPanel.style.display = 'block';
-            if (artCountTag) artCountTag.textContent = `${recon.artifacts.length} ARTIFACTS`;
-            artCont.innerHTML = `
-              <table style="width:100%; border-collapse:collapse; margin-top:0.5rem; font-size:12px;">
-                <thead>
-                  <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-family:var(--font-mono); text-align:left;">
-                    <th style="padding:6px;">ID</th>
-                    <th style="padding:6px;">FILE</th>
-                    <th style="padding:6px;">FORMAT</th>
-                    <th style="padding:6px;">SIZE</th>
-                    <th style="padding:6px;">STATUS</th>
-                    <th style="padding:6px;">CONFIDENCE</th>
-                    <th style="padding:6px;">ACTION</th>
+      // Render multi-format carved artifacts table if available
+      if (recon.artifacts && recon.artifacts.length > 0) {
+        const artPanel = document.getElementById('multi-artifacts-panel');
+        const artCont = document.getElementById('multi-artifacts-container');
+        const artCountTag = document.getElementById('artifacts-count-tag');
+        if (artPanel && artCont) {
+          artPanel.style.display = 'block';
+          if (artCountTag) artCountTag.textContent = `${recon.artifacts.length} ARTIFACTS`;
+          artCont.innerHTML = `
+            <table style="width:100%; border-collapse:collapse; margin-top:0.5rem; font-size:12px;">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-family:var(--font-mono); text-align:left;">
+                  <th style="padding:6px;">ID</th>
+                  <th style="padding:6px;">FILE</th>
+                  <th style="padding:6px;">FORMAT</th>
+                  <th style="padding:6px;">SIZE</th>
+                  <th style="padding:6px;">STATUS</th>
+                  <th style="padding:6px;">CONFIDENCE</th>
+                  <th style="padding:6px;">ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${recon.artifacts.map(a => `
+                  <tr style="border-bottom:1px solid var(--border-subtle);">
+                    <td style="padding:6px; font-family:var(--font-mono); font-size:11px;">${escapeHtml(a.artifact_id)}</td>
+                    <td style="padding:6px; font-weight:600;">${escapeHtml(a.filename)}</td>
+                    <td style="padding:6px;"><span class="tag tag-cyan" style="font-size:10px;">${escapeHtml((a.format_name || '').toUpperCase())}</span></td>
+                    <td style="padding:6px; font-family:var(--font-mono);">${(a.size_bytes || 0).toLocaleString()} B</td>
+                    <td style="padding:6px;"><span class="tag ${a.category === 'VERIFIED' ? 'tag-green' : (a.category === 'RECOVERED' ? 'tag-cyan' : 'tag-amber')}" style="font-size:10px;">${escapeHtml(a.category)}</span></td>
+                    <td style="padding:6px; font-weight:600;">${Math.round(a.confidence_score || 0)}%</td>
+                    <td style="padding:6px;"><a href="/api/sessions/${SESSION_ID}/artifacts/${a.artifact_id}/download" class="btn btn-ghost btn-sm" download>&darr; Download</a></td>
                   </tr>
-                </thead>
-                <tbody>
-                  ${recon.artifacts.map(a => `
-                    <tr style="border-bottom:1px solid var(--border-subtle);">
-                      <td style="padding:6px; font-family:var(--font-mono); font-size:11px;">${escapeHtml(a.artifact_id)}</td>
-                      <td style="padding:6px; font-weight:600;">${escapeHtml(a.filename)}</td>
-                      <td style="padding:6px;"><span class="tag tag-cyan" style="font-size:10px;">${escapeHtml((a.format_name || '').toUpperCase())}</span></td>
-                      <td style="padding:6px; font-family:var(--font-mono);">${(a.size_bytes || 0).toLocaleString()} B</td>
-                      <td style="padding:6px;"><span class="tag ${a.category === 'VERIFIED' ? 'tag-green' : (a.category === 'RECOVERED' ? 'tag-cyan' : 'tag-amber')}" style="font-size:10px;">${escapeHtml(a.category)}</span></td>
-                      <td style="padding:6px; font-weight:600;">${Math.round(a.confidence_score || 0)}%</td>
-                      <td style="padding:6px;"><a href="/api/sessions/${SESSION_ID}/artifacts/${a.artifact_id}/download" class="btn btn-ghost btn-sm" download>&darr; Download</a></td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            `;
-          }
+                `).join('')}
+              </tbody>
+            </table>
+          `;
         }
       }
     } catch (err) {
       console.error('Reconstruction metadata error:', err);
+      if (stTag) { stTag.textContent = 'FAILED'; stTag.className = 'tag tag-red'; }
+      if (shaEl) shaEl.textContent = 'UNAVAILABLE';
+      if (sizeEl) sizeEl.textContent = 'N/A';
+      if (fragsEl) fragsEl.textContent = 'N/A';
+      if (coverageVal) { coverageVal.textContent = 'NOT VERIFIED'; coverageVal.style.color = 'var(--text-muted)'; }
+      if (specEl) {
+        specEl.innerHTML = `
+          <div style="color: var(--accent-red); margin-bottom: 0.35rem;">
+            <strong>Structural Inspection Failed:</strong> ${escapeHtml(err.message)}
+          </div>
+          <button type="button" onclick="loadReconstructionMetadata()" class="btn btn-secondary btn-sm" style="font-size:11px; padding:3px 10px;">
+            &#8635; Retry Structural Inspection
+          </button>
+        `;
+      }
+      if (dlBtn) { dlBtn.style.opacity = '0.5'; dlBtn.removeAttribute('href'); dlBtn.style.cursor = 'not-allowed'; }
+      if (viewBtn) viewBtn.style.display = 'none';
       showError(`Reconstruction error: ${err.message}`);
     }
+  }
 
-    // 4. Fetch Intelligence Report Findings
+  // 4. Intelligence Report Findings Loader
+  async function loadIntelligenceReport() {
+    const findingsEl = document.getElementById('findings-container');
+    const repTag = document.getElementById('report-id-tag');
+
     try {
-      const repRes = await fetch(`/api/sessions/${SESSION_ID}/report`);
-      const findingsEl = document.getElementById('findings-container');
-      const repTag = document.getElementById('report-id-tag');
-
+      const repRes = await fetchWithTimeout(`/api/sessions/${SESSION_ID}/report`, {}, 8000);
       if (repRes.ok) {
         const rep = await repRes.json();
         if (repTag) repTag.textContent = rep.report_id || 'RPT-ANALYSIS';
@@ -1134,21 +1156,60 @@ __SUBNAV__
       }
     } catch (err) {
       console.warn('Report fetch warning:', err);
+      if (findingsEl) {
+        findingsEl.innerHTML = `
+          <div style="color: var(--text-muted); font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <span>Report findings unavailable: ${escapeHtml(err.message)}</span>
+            <button type="button" onclick="loadIntelligenceReport()" class="btn btn-secondary btn-sm" style="font-size:11px; padding:2px 8px;">&#8635; Retry</button>
+          </div>
+        `;
+      }
+    }
+  }
+
+  // 5. Gemini AI Analysis Loader
+  async function loadAiAnalysis() {
+    const aiCont = document.getElementById('ai-container');
+    const aiTag = document.getElementById('ai-model-tag');
+
+    // Explicit LOADING state
+    if (aiTag) { aiTag.textContent = 'ANALYZING...'; aiTag.className = 'tag tag-cyan'; }
+    if (aiCont) {
+      aiCont.innerHTML = '<p style="color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;">Querying intelligent AI analysis&hellip;</p>';
     }
 
-    // 5. Fetch Gemini AI Analysis
     try {
-      const aiRes = await fetch(`/api/sessions/${SESSION_ID}/ai-analysis`);
-      const aiCont = document.getElementById('ai-container');
-      const aiTag = document.getElementById('ai-model-tag');
+      const aiRes = await fetchWithTimeout(`/api/sessions/${SESSION_ID}/ai-analysis`, {}, 10000);
+      const ai = await aiRes.json().catch(() => ({}));
 
-      if (aiRes.ok) {
-        const ai = await aiRes.json();
-        if (aiTag && ai.model_used) {
-          aiTag.textContent = `${ai.model_used.toUpperCase()}`;
+      // Check if provider is unconfigured or unavailable
+      if (!aiRes.ok || ai.configured === false || ai.status === 'unavailable' || ai.message === 'AI analysis unavailable — configure provider') {
+        if (aiTag) {
+          aiTag.textContent = 'UNCONFIGURED';
+          aiTag.className = 'tag tag-amber';
+        }
+        if (aiCont) {
+          aiCont.innerHTML = `
+            <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 0.85rem; border-radius: 2px; font-size: 12.5px; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <strong style="color: var(--accent-amber);">AI analysis unavailable — configure provider</strong><br>
+                <span style="font-size: 11.5px; color: var(--text-muted);">Set <code>GEMINI_API_KEY</code> in environment to enable intelligent AI forensic briefs. Deterministic carving, graph assembly, and P2 contract validation operate with 100% integrity offline.</span>
+              </div>
+              <button type="button" onclick="loadAiAnalysis()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px;">
+                &#8635; Retry
+              </button>
+            </div>
+          `;
+        }
+        return;
+      }
+
+      if (ai.success && ai.explanation) {
+        if (aiTag) {
+          aiTag.textContent = (ai.model_used || 'GEMINI').toUpperCase();
           aiTag.className = 'tag tag-green';
         }
-        if (aiCont && ai.explanation) {
+        if (aiCont) {
           const exp = ai.explanation;
           aiCont.innerHTML = `
             <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 1rem; border-radius: 2px; font-size: 13px;">
@@ -1162,31 +1223,43 @@ __SUBNAV__
               </div>
             </div>
           `;
-        } else if (aiCont) {
-          aiCont.innerHTML = '<p style="color: var(--text-secondary); font-size: 12px;">AI analysis completed with no structured findings.</p>';
         }
       } else {
         if (aiTag) {
-          aiTag.textContent = 'AI OFFLINE';
-          aiTag.className = 'tag tag-copper';
+          aiTag.textContent = 'UNCONFIGURED';
+          aiTag.className = 'tag tag-amber';
         }
         if (aiCont) {
           aiCont.innerHTML = `
-            <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 0.85rem; border-radius: 2px; font-size: 12px; color: var(--text-secondary);">
-              <strong>Deterministic Analysis Only:</strong> Gemini AI integration is disabled or offline. Deterministic carving, graph reconstruction, and P2 contract validation completed with full integrity.
+            <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 0.85rem; border-radius: 2px; font-size: 12.5px; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <strong style="color: var(--accent-amber);">AI analysis unavailable — configure provider</strong><br>
+                <span style="font-size: 11.5px; color: var(--text-muted);">${escapeHtml(ai.error || 'Provider not configured or offline.')}</span>
+              </div>
+              <button type="button" onclick="loadAiAnalysis()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px;">
+                &#8635; Retry
+              </button>
             </div>
           `;
         }
       }
     } catch (e) {
       console.warn('AI analysis fetch warning:', e);
-      const aiTag = document.getElementById('ai-model-tag');
-      const aiCont = document.getElementById('ai-container');
-      if (aiTag) { aiTag.textContent = 'AI OFFLINE'; aiTag.className = 'tag tag-copper'; }
+      if (aiTag) { aiTag.textContent = 'UNAVAILABLE'; aiTag.className = 'tag tag-copper'; }
       if (aiCont) {
-        aiCont.innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">AI analysis service unreachable.</p>';
+        aiCont.innerHTML = `
+          <div style="background: var(--bg-inset); border: 1px solid rgba(239, 68, 68, 0.3); padding: 0.85rem; border-radius: 2px; font-size: 12px; color: var(--accent-red); display: flex; justify-content: space-between; align-items: center;">
+            <span>AI analysis request failed: ${escapeHtml(e.message)}</span>
+            <button type="button" onclick="loadAiAnalysis()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px;">
+              &#8635; Retry
+            </button>
+          </div>
+        `;
       }
     }
+  }
+
+  // Action: Trigger Synthetic Repair
   async function triggerSyntheticRepair() {
     const btn = document.getElementById('btn-trigger-repair');
     if (btn) {
@@ -1194,10 +1267,10 @@ __SUBNAV__
       btn.innerHTML = '&#8987; Repairing PDF structure...';
     }
     try {
-      const res = await fetch(`/api/sessions/${SESSION_ID}/repair`, {
+      const res = await fetchWithTimeout(`/api/sessions/${SESSION_ID}/repair`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
-      });
+      }, 15000);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         alert('Synthetic repair failed: ' + (err.detail || res.statusText));
@@ -1207,7 +1280,8 @@ __SUBNAV__
         }
         return;
       }
-      await loadOverview();
+      await loadReconstructionMetadata();
+      await loadSessionDetail();
     } catch (e) {
       console.error('Synthetic repair error:', e);
       alert('Network error during repair: ' + e.message);
@@ -1218,7 +1292,23 @@ __SUBNAV__
     }
   }
 
-  window.addEventListener('DOMContentLoaded', loadOverview);
+  // Concurrent Orchestrator (Never blocks one subsystem for another)
+  async function loadOverview() {
+    hideError();
+    await Promise.allSettled([
+      loadSessionDetail(),
+      loadEvidenceBundle(),
+      loadReconstructionMetadata(),
+      loadIntelligenceReport(),
+      loadAiAnalysis()
+    ]);
+  }
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', loadOverview);
+  } else {
+    loadOverview();
+  }
 </script>
 """
     rendered_content = (

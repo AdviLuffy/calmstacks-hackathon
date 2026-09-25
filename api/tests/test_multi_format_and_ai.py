@@ -297,8 +297,11 @@ def test_api_report_generation_endpoints(integrated_client: TestClient):
     ai_res = integrated_client.get(f"/api/sessions/{session_id}/ai-analysis")
     assert ai_res.status_code == 200
     ai_body = ai_res.json()
-    assert ai_body["success"] is True
     assert "explanation" in ai_body
+    if not ai_body.get("configured", False):
+        assert ai_body["message"] == "AI analysis unavailable — configure provider"
+    else:
+        assert ai_body["success"] is True
 
 
 def test_full_demonstration_suite_passes():
