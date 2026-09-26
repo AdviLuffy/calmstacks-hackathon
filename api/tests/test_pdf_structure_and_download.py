@@ -366,9 +366,13 @@ def test_4missing_fixture_and_repair_action(integrated_client):
     assert "PIPELINE: PROCESSED" in page_html
 
 
-def test_cold_reconstruction_and_unconfigured_ai_analysis(integrated_client):
+def test_cold_reconstruction_and_unconfigured_ai_analysis(integrated_client, monkeypatch):
     """Verify cold reconstruction fallback and truthful AI unconfigured state."""
     from app.routers.dashboard import _RECONSTRUCTED_META
+
+    monkeypatch.setenv("TRACE_SKIP_DOTENV", "1")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("TRACE_GEMINI_API_KEY", "")
 
     # 1. Carve a session
     r_carve = integrated_client.post(
@@ -524,8 +528,48 @@ def test_105block_erased_recovery_and_synthetic_repair(integrated_client):
     # Test explicit repaired mode download for uploaded file
     r_upload_rep = integrated_client.get(f"/api/sessions/{upload_session_id}/reconstruction/download?mode=repaired")
     assert r_upload_rep.status_code == 200
-    upload_reader = pypdf.PdfReader(io.BytesIO(r_upload_rep.content))
-    assert len(upload_reader.pages) == 8
+    upload_rep_bytes = r_upload_rep.content
+
+    # Strict ISO 32000-1 & Adobe Acrobat compatibility verification
+    import warnings
+    with warnings.catch_warnings(record=True) as captured_warnings:
+        warnings.simplefilter("always")
+        strict_reader = pypdf.PdfReader(io.BytesIO(upload_rep_bytes), strict=True)
+        assert len(strict_reader.pages) == 8, f"Expected 8 pages, got {len(strict_reader.pages)}"
+        for p_idx, page in enumerate(strict_reader.pages):
+            page_text = page.extract_text()
+            assert len(page_text) > 0, f"Page {p_idx + 1} extracted empty text"
+            assert "TRACE Fragment Reconstruction Test" in page_text or f"page {p_idx + 1}" in page_text.lower()
+        # Zero warnings from strict PDF parsing confirms clean stream lengths and markers
+        assert len(captured_warnings) == 0, f"Unexpected strict warnings: {[str(w.message) for w in captured_warnings]}"
+
+    # Verify every stream object has an exact matching /Length attribute
+    stream_objs = list(re.finditer(rb"(\d+)\s+0\s+obj[\s\S]*?stream[\r\n]+([\s\S]*?)[\r\n]+endstream", upload_rep_bytes))
+    assert len(stream_objs) >= 8, f"Expected at least 8 stream objects, found {len(stream_objs)}"
+    for sm in stream_objs:
+        obj_hdr = sm.group(0)
+        obj_body = sm.group(2)
+        len_match = re.search(rb"/Length\s+(\d+)", obj_hdr)
+        assert len_match is not None, f"Object {sm.group(1)} is missing /Length attribute"
+        declared_len = int(len_match.group(1))
+        actual_len = len(obj_body)
+        assert declared_len == actual_len, f"Object {sm.group(1)} /Length mismatch: declared={declared_len}, actual={actual_len}"
+
+        # Verify BT/ET and q/Q operator balance
+        bt_count = len(re.findall(rb"\bBT\b", obj_body))
+        et_count = len(re.findall(rb"\bET\b", obj_body))
+        assert bt_count == et_count, f"Object {sm.group(1)} has unbalanced text blocks: BT={bt_count}, ET={et_count}"
+        q_count = len(re.findall(rb"\bq\b", obj_body))
+        big_q_count = len(re.findall(rb"\bQ\b", obj_body))
+        assert q_count == big_q_count, f"Object {sm.group(1)} has unbalanced graphics states: q={q_count}, Q={big_q_count}"
+
+    # Verify PyMuPDF renders all 8 pages without error
+    doc_up = fitz.open(stream=upload_rep_bytes, filetype="pdf")
+    assert doc_up.page_count == 8
+    for page_idx in range(8):
+        pm = doc_up.load_page(page_idx).get_pixmap()
+        assert pm.width == 612 and pm.height == 792
+    doc_up.close()
 
     # 8. Evaluation comparison against ground truth strictly in test harness
     assert len(ref_gt_bytes) == 26778

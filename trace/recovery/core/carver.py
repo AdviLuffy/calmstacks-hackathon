@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Sequence
 
@@ -85,9 +86,14 @@ class MultiFormatCarver:
                         format_name="pdf",
                         mime_type="application/pdf",
                         size_bytes=len(candidate_bytes),
-                        sha256="",
+                        sha256=hashlib.sha256(candidate_bytes).hexdigest(),
                         category=cat,
                         confidence_score=val.integrity_score * 100.0,
+                        format_confidence=val.integrity_score * 100.0,
+                        authentic_recovery_pct=None,
+                        completeness="COMPLETE" if val.is_valid else "PARTIAL",
+                        integrity_status="UNVERIFIED",
+                        structural_repair="NONE",
                         raw_bytes=candidate_bytes,
                         validation=val,
                         reconstruction_method="signature_carve",
@@ -117,9 +123,14 @@ class MultiFormatCarver:
                         format_name="png",
                         mime_type="image/png",
                         size_bytes=len(candidate_bytes),
-                        sha256="",
+                        sha256=hashlib.sha256(candidate_bytes).hexdigest(),
                         category=cat,
                         confidence_score=val.integrity_score * 100.0,
+                        format_confidence=val.integrity_score * 100.0,
+                        authentic_recovery_pct=None,
+                        completeness="COMPLETE" if val.is_valid else "PARTIAL",
+                        integrity_status="UNVERIFIED",
+                        structural_repair="NONE",
                         raw_bytes=candidate_bytes,
                         validation=val,
                         reconstruction_method="signature_carve",
@@ -154,9 +165,14 @@ class MultiFormatCarver:
                             format_name="jpeg",
                             mime_type="image/jpeg",
                             size_bytes=len(candidate_bytes),
-                            sha256="",
+                            sha256=hashlib.sha256(candidate_bytes).hexdigest(),
                             category=cat,
                             confidence_score=val.integrity_score * 100.0,
+                            format_confidence=val.integrity_score * 100.0,
+                            authentic_recovery_pct=None,
+                            completeness="COMPLETE" if val.is_valid else "PARTIAL",
+                            integrity_status="UNVERIFIED",
+                            structural_repair="NONE",
                             raw_bytes=candidate_bytes,
                             validation=val,
                             reconstruction_method="signature_carve",
@@ -212,7 +228,6 @@ class MultiFormatCarver:
         # Compute SHA256 for all carved artifacts
         for art in artifacts:
             if not art.sha256 and art.raw_bytes:
-                import hashlib
                 art.sha256 = hashlib.sha256(art.raw_bytes).hexdigest()
 
         return artifacts

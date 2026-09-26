@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Sequence
 
+from pathlib import Path
+
 DEFAULT_MODEL_PREFERENCE = [
     "gemini-3.8-flash",
     "gemini-3.5-flash-lite",
@@ -13,6 +15,32 @@ DEFAULT_MODEL_PREFERENCE = [
     "gemini-3.1-flash-lite",
     "gemini-flash-latest",
 ]
+
+
+def _load_env_file(skip_dotenv: bool = False) -> None:
+    """Load local .env file if present in workspace without overwriting existing environment."""
+    if skip_dotenv or os.environ.get("TRACE_SKIP_DOTENV") == "1":
+        return
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    env_path = repo_root / ".env"
+    if env_path.is_file():
+        try:
+            from dotenv import load_dotenv
+
+            load_dotenv(dotenv_path=env_path)
+        except Exception:
+            # Fallback direct line parser if python-dotenv fails
+            try:
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("\"'")
+                        if k and k not in os.environ:
+                            os.environ[k] = v
+            except Exception:
+                pass
 
 
 @dataclass(frozen=True)
@@ -28,8 +56,10 @@ class GeminiSettings:
     max_text_excerpt_bytes: int = 4096
 
 
-def load_gemini_settings() -> GeminiSettings:
-    """Read Gemini configuration from environment variables."""
+def load_gemini_settings(skip_dotenv: bool = False) -> GeminiSettings:
+    """Read Gemini configuration from environment variables (loading .env if present)."""
+    _load_env_file(skip_dotenv=skip_dotenv)
+
     # Check both GEMINI_... and TRACE_GEMINI_...
     api_key = (
         os.environ.get("GEMINI_API_KEY")

@@ -68,15 +68,26 @@ class ForensicReportGenerator:
                 RecoveryCategory.UNRECOVERABLE: "badge-unrecoverable",
             }.get(a.category, "badge-candidate")
 
+            integ_status = getattr(a, "integrity_status", "UNVERIFIED")
+            repair_status = getattr(a, "structural_repair", "NONE")
+            auth_pct = getattr(a, "authentic_recovery_pct", None)
+            completeness = getattr(a, "completeness", a.category.value)
+
+            integ_badge_class = "badge-verified" if integ_status == "VERIFIED" else ("badge-partial" if integ_status == "UNVERIFIED" else "badge-unrecoverable")
+            repair_badge_class = "badge-partial" if "SYNTHETIC" in repair_status else ("badge-verified" if "NONE" in repair_status else "badge-unrecoverable")
+            auth_display = f"{auth_pct:.1f}%" if auth_pct is not None else "Unknown"
+
             artifacts_rows.append(
                 f"""<tr>
                 <td style="font-family:monospace; font-weight:600;">{html.escape(a.artifact_id)}</td>
                 <td>{html.escape(a.filename)}</td>
                 <td><span class="format-pill">{html.escape(a.format_name.upper())}</span></td>
                 <td>{a.size_bytes:,} B</td>
-                <td><span class="badge {cat_badge_class}">{a.category.value}</span></td>
-                <td><strong>{a.confidence_score:.1f}%</strong></td>
-                <td style="font-family:monospace; font-size:11px;">{html.escape(a.sha256[:16])}...</td>
+                <td><strong>{auth_display}</strong></td>
+                <td><span class="badge {cat_badge_class}">{html.escape(str(completeness))}</span></td>
+                <td><span class="badge {integ_badge_class}">{html.escape(str(integ_status))}</span></td>
+                <td><span class="badge {repair_badge_class}">{html.escape(str(repair_status))}</span></td>
+                <td style="font-family:monospace; font-size:11px;">{html.escape(a.sha256[:16]) if a.sha256 else "—"}...</td>
                 <td>{html.escape(a.explanation)}</td>
             </tr>"""
             )
@@ -181,14 +192,16 @@ class ForensicReportGenerator:
                     <th>Filename</th>
                     <th>Format</th>
                     <th>Size</th>
-                    <th>Status</th>
-                    <th>Confidence</th>
+                    <th>Authentic Recovery</th>
+                    <th>Completeness</th>
+                    <th>Integrity</th>
+                    <th>Structural Repair</th>
                     <th>SHA-256</th>
                     <th>Recovery Notes</th>
                 </tr>
             </thead>
             <tbody>
-                {''.join(artifacts_rows) if artifacts_rows else '<tr><td colspan="8">No artifacts recovered</td></tr>'}
+                {''.join(artifacts_rows) if artifacts_rows else '<tr><td colspan="10">No artifacts recovered</td></tr>'}
             </tbody>
         </table>
     </div>

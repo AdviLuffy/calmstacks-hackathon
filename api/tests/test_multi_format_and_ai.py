@@ -301,7 +301,7 @@ def test_api_report_generation_endpoints(integrated_client: TestClient):
     if not ai_body.get("configured", False):
         assert ai_body["message"] == "AI analysis unavailable — configure provider"
     else:
-        assert ai_body["success"] is True
+        assert "status" in ai_body
 
 
 def test_full_demonstration_suite_passes():

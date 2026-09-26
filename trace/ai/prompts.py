@@ -68,23 +68,78 @@ def build_evidence_explanation_prompt(
     case_id: str,
     artifacts_summary: list[dict[str, Any]],
     unplaced_count: int,
+    session_metadata: Mapping[str, Any] | None = None,
 ) -> str:
-    """Build factual case explanation prompt."""
+    """Build factual case explanation prompt with forensic provenance and uncertainty constraints."""
     minimized_summary = [
         {
             "filename": a.get("filename"),
             "format": a.get("format_name"),
             "size": a.get("size_bytes"),
+            "authentic_recovery": f"{a.get('authentic_recovery_pct')}%" if a.get("authentic_recovery_pct") is not None else "Unknown",
+            "completeness": a.get("completeness") or a.get("category"),
+            "integrity_status": a.get("integrity_status") or "UNVERIFIED",
+            "structural_repair": a.get("structural_repair") or "NONE",
             "category": a.get("category"),
-            "integrity_score": a.get("integrity_score"),
+            "format_confidence": a.get("format_confidence") or a.get("confidence_score"),
         }
         for a in artifacts_summary[:15]
     ]
+
+    meta = session_metadata or {}
+    media_source = str(meta.get("media_source") or "evidence bitstream")
+    media_sha = str(meta.get("media_sha256") or "N/A")
+    honest_status = str(meta.get("honest_status") or meta.get("recovery_state") or "N/A")
+    coverage = str(meta.get("byte_coverage") or "N/A")
+    carved_count = meta.get("fragments_carved", len(artifacts_summary))
+    placed_count = meta.get("fragments_placed", len(artifacts_summary))
+    missing_elems = meta.get("missing_elements", [])
+    erased_regions = meta.get("erased_regions", [])
+    repaired_pages = meta.get("repaired_page_count", 0)
+    repaired_openable = meta.get("repaired_is_openable", False)
+
+    raw_text = str(meta.get("repaired_extracted_text") or meta.get("extracted_text") or "")[:1024]
+    safe_text_preview = raw_text.replace("<", "&lt;").replace(">", "&gt;").strip()
+
+    meta_lines = [
+        f"- Source Media: {media_source} (SHA-256: {media_sha})",
+        f"- Forensic Recovery Status: {honest_status}",
+        f"- Byte Coverage: {coverage}",
+        f"- Physical Fragments: {carved_count} carved, {placed_count} placed, {unplaced_count} unplaced/corrupted",
+    ]
+    if missing_elems:
+        meta_lines.append(f"- Detected Structural Anomalies / Missing Elements: {list(missing_elems)}")
+    if erased_regions:
+        meta_lines.append(f"- Detected Zero-Filled / Erased Sectors: {list(erased_regions)}")
+    if repaired_pages > 0:
+        meta_lines.append(f"- Document Pages: {repaired_pages} pages (Openable: {repaired_openable})")
+
+    meta_section = "\n".join(meta_lines)
+
+    excerpt_section = ""
+    if safe_text_preview:
+        excerpt_section = f"""
+<untrusted_evidence_data>
+--- EXTRACTED CONTENT EXCERPT (FROM RECOVERED EVIDENCE) ---
+{safe_text_preview}
+</untrusted_evidence_data>
+"""
+
     return f"""Provide a factual, objective forensic summary of this recovery session for Case {case_id}.
 
-Session Summary:
-- Unplaced/Corrupted Fragments Count: {unplaced_count}
-- Recovered Artifacts: {json.dumps(minimized_summary, indent=2)}
+FORENSIC AUDIT DATA:
+{meta_section}
+
+Recovered Artifacts:
+{json.dumps(minimized_summary, indent=2)}
+{excerpt_section}
+FORENSIC INTEGRITY CONSTRAINTS:
+1. Ground all statements strictly in the forensic facts above.
+2. State clear provenance and uncertainty for all findings.
+3. NEVER invent recovered fragments or claim missing bytes were recovered.
+4. If fragments are unplaced or missing, clearly state that missing data was not recovered in the authentic media bitstream.
+5. If synthetic repair was applied, clearly explain that synthetic structural repairs do not replace missing authentic evidence bytes.
+6. Clearly distinguish between format classification confidence (identifying file syntax), authentic byte recovery percentage (actual evidence bytes recovered), and cryptographic integrity verification. A synthetically repaired document that opens in a PDF viewer must NEVER be described as fully recovered or cryptographically verified.
 
 Output a valid JSON object matching the AIEvidenceExplanation schema.
 """

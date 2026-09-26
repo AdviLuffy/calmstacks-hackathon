@@ -127,3 +127,47 @@ class MockGeminiClient(ResilientGeminiClient):
 
         prov.error = "All configured Gemini models failed."
         return AIResponse(success=False, provenance=prov)
+
+    def test_connection(self) -> dict[str, Any]:
+        """Simulate connection test without external network calls."""
+        if not self.settings.enabled or not self.settings.api_key:
+            return {
+                "connected": False,
+                "status": "unconfigured",
+                "message": "GEMINI_API_KEY is not configured",
+                "latency_ms": 0.0,
+            }
+        if self.auth_error:
+            return {
+                "connected": False,
+                "status": "auth_error",
+                "error": "Authentication failed: 401 Unauthorized",
+                "message": "Invalid API key",
+                "latency_ms": 1.5,
+            }
+        if self.quota_exhausted:
+            return {
+                "connected": False,
+                "status": "quota_exhausted",
+                "error": "API Quota exhausted: 429 Quota Exceeded",
+                "message": "API Quota exhausted",
+                "latency_ms": 1.5,
+            }
+        for model in self.settings.model_preference:
+            if model in self.fail_models:
+                continue
+            return {
+                "connected": True,
+                "status": "connected",
+                "model": model,
+                "message": "Successfully connected to Google Gemini API",
+                "latency_ms": 5.0,
+            }
+        return {
+            "connected": False,
+            "status": "error",
+            "error": "All configured Gemini models failed.",
+            "message": "Connection test failed",
+            "latency_ms": 5.0,
+        }
+

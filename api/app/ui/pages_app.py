@@ -1060,8 +1060,10 @@ __SUBNAV__
                   <th style="padding:6px;">FILE</th>
                   <th style="padding:6px;">FORMAT</th>
                   <th style="padding:6px;">SIZE</th>
+                  <th style="padding:6px;">AUTHENTIC RECOVERY</th>
                   <th style="padding:6px;">STATUS</th>
-                  <th style="padding:6px;">CONFIDENCE</th>
+                  <th style="padding:6px;">INTEGRITY</th>
+                  <th style="padding:6px;">STRUCTURAL REPAIR</th>
                   <th style="padding:6px;">ACTION</th>
                 </tr>
               </thead>
@@ -1070,10 +1072,17 @@ __SUBNAV__
                   <tr style="border-bottom:1px solid var(--border-subtle);">
                     <td style="padding:6px; font-family:var(--font-mono); font-size:11px;">${escapeHtml(a.artifact_id)}</td>
                     <td style="padding:6px; font-weight:600;">${escapeHtml(a.filename)}</td>
-                    <td style="padding:6px;"><span class="tag tag-cyan" style="font-size:10px;">${escapeHtml((a.format_name || '').toUpperCase())}</span></td>
+                    <td style="padding:6px;">
+                      <span class="tag tag-cyan" style="font-size:10px;">${escapeHtml((a.format_name || '').toUpperCase())}</span>
+                      ${a.format_confidence != null ? `<span style="font-size:10px; color:var(--text-muted); margin-left:3px;">(${Math.round(a.format_confidence)}%)</span>` : ''}
+                    </td>
                     <td style="padding:6px; font-family:var(--font-mono);">${(a.size_bytes || 0).toLocaleString()} B</td>
-                    <td style="padding:6px;"><span class="tag ${a.category === 'VERIFIED' ? 'tag-green' : (a.category === 'RECOVERED' ? 'tag-cyan' : 'tag-amber')}" style="font-size:10px;">${escapeHtml(a.category)}</span></td>
-                    <td style="padding:6px; font-weight:600;">${Math.round(a.confidence_score || 0)}%</td>
+                    <td style="padding:6px; font-family:var(--font-mono); font-weight:700; color: ${a.authentic_recovery_pct != null ? (a.authentic_recovery_pct >= 99.9 ? '#10b981' : (a.authentic_recovery_pct > 0 ? '#f59e0b' : '#ef4444')) : 'var(--text-muted)'};">
+                      ${a.authentic_recovery_pct != null ? `${a.authentic_recovery_pct.toFixed(1)}%` : 'Unknown'}
+                    </td>
+                    <td style="padding:6px;"><span class="tag ${a.completeness === 'COMPLETE' || a.category === 'VERIFIED' ? 'tag-green' : (a.completeness === 'PARTIAL' || a.category === 'PARTIAL' ? 'tag-amber' : 'tag-red')}" style="font-size:10px;">${escapeHtml(a.completeness || a.category || 'UNKNOWN')}</span></td>
+                    <td style="padding:6px;"><span class="tag ${a.integrity_status === 'VERIFIED' ? 'tag-green' : (a.integrity_status === 'UNVERIFIED' ? 'tag-amber' : 'tag-red')}" style="font-size:10px;">${escapeHtml(a.integrity_status || 'UNVERIFIED')}</span></td>
+                    <td style="padding:6px;"><span class="tag" style="font-size:10px; ${a.structural_repair && a.structural_repair.includes('SYNTHETIC') ? 'background:rgba(168,85,247,0.2); color:#e9d5ff; border:1px solid rgba(168,85,247,0.5);' : (a.structural_repair && a.structural_repair.includes('NONE') ? 'background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.4);' : 'background:rgba(239,68,68,0.15); color:#ef4444; border:1px solid rgba(239,68,68,0.4);')}">${escapeHtml(a.structural_repair || 'NONE')}</span></td>
                     <td style="padding:6px;"><a href="/api/sessions/${SESSION_ID}/artifacts/${a.artifact_id}/download" class="btn btn-ghost btn-sm" download>&darr; Download</a></td>
                   </tr>
                 `).join('')}

@@ -587,6 +587,72 @@ async def carve_raw_evidence(
         disk_analyzer = ForensicDiskAnalyzer(write_blocked=write_blocked)
         disk_rep = disk_analyzer.analyze_bytes(media_bytes, source_name=Path(media_path).name, image_sha256=pipeline_result.scan.media_sha256)
 
+        # Calibrate authentic recovery metrics across recovered artifacts
+        total_expected_blocks = len(pipeline_result.scan.fragments) + len(pipeline_result.integrity_report.missing_elements)
+        placed_blocks = len(pipeline_result.reconstruction.fragment_order)
+
+        if is_complete and is_verified:
+            session_auth_recovery_pct = 100.0
+            session_completeness = "COMPLETE"
+            session_integrity_status = "VERIFIED"
+            session_repair_status = "NONE (AUTHENTIC)"
+        elif repair_res and repair_res.is_openable and (not is_complete or len(pipeline_result.integrity_report.missing_elements) > 0):
+            session_completeness = "PARTIAL"
+            session_integrity_status = "UNVERIFIED"
+            session_repair_status = "SYNTHETIC"
+            if fixture_gt_bytes and len(fixture_gt_bytes) > 0:
+                session_auth_recovery_pct = round((len(raw_pdf_bytes) / len(fixture_gt_bytes)) * 100.0, 1)
+            elif total_expected_blocks > 0:
+                session_auth_recovery_pct = round((placed_blocks / max(1, total_expected_blocks)) * 100.0, 1)
+            else:
+                session_auth_recovery_pct = None
+        else:
+            session_completeness = "PARTIAL" if (raw_pdf_bytes and len(raw_pdf_bytes) > 0) else "INCOMPLETE"
+            session_integrity_status = "FAILED" if (pipeline_result.recovery_state == "CORRUPTED") else "UNVERIFIED"
+            session_repair_status = "NOT REPAIRED"
+            if fixture_gt_bytes and len(fixture_gt_bytes) > 0:
+                session_auth_recovery_pct = round((len(raw_pdf_bytes) / len(fixture_gt_bytes)) * 100.0, 1)
+            elif total_expected_blocks > 0:
+                session_auth_recovery_pct = round((placed_blocks / max(1, total_expected_blocks)) * 100.0, 1)
+            else:
+                session_auth_recovery_pct = None
+
+        for art in carved_arts:
+            if art.format_name == "pdf":
+                art.format_confidence = art.confidence_score
+                art.authentic_recovery_pct = session_auth_recovery_pct
+                art.completeness = session_completeness
+                art.integrity_status = session_integrity_status
+                art.structural_repair = session_repair_status
+                if not is_complete or not is_verified:
+                    art.category = RecoveryCategory.PARTIAL
+                    art.confidence_score = session_auth_recovery_pct if session_auth_recovery_pct is not None else 50.0
+                else:
+                    art.category = RecoveryCategory.VERIFIED
+                    art.confidence_score = 100.0
+
+        # Ensure primary reconstructed document exists as artifact if carver found 0 streams
+        if not carved_arts and (raw_pdf_bytes or (repair_res and repair_res.repaired_bytes)):
+            primary_bytes = repair_res.repaired_bytes if (repair_res and repair_res.is_openable) else raw_pdf_bytes
+            primary_art = RecoveredArtifact(
+                artifact_id=f"ART-{record.session_id[:8]}",
+                filename=f"{safe_media_name.rsplit('.', 1)[0]}.pdf",
+                format_name="pdf",
+                mime_type="application/pdf",
+                size_bytes=len(primary_bytes),
+                sha256=hashlib.sha256(primary_bytes).hexdigest() if primary_bytes else "",
+                category=RecoveryCategory.VERIFIED if (is_complete and is_verified) else RecoveryCategory.PARTIAL,
+                confidence_score=session_auth_recovery_pct if session_auth_recovery_pct is not None else (100.0 if (is_complete and is_verified) else 50.0),
+                format_confidence=100.0,
+                authentic_recovery_pct=session_auth_recovery_pct,
+                completeness=session_completeness,
+                integrity_status=session_integrity_status,
+                structural_repair=session_repair_status,
+                raw_bytes=primary_bytes,
+                explanation=honest_status,
+            )
+            carved_arts.append(primary_art)
+
         for art in carved_arts:
             _RECONSTRUCTED_FILES[f"{record.session_id}_{art.artifact_id}"] = art.raw_bytes
 
@@ -845,8 +911,24 @@ def get_reconstruction_details(
         "missing_elements": ext.get("missing_elements") or [],
         "corrupted_fragment_ids": ext.get("corrupted_fragment_ids") or [],
         "erased_regions": ext.get("erased_regions") or [],
-        "scan_warnings": ext.get("scan_warnings") or [],
-        "artifacts": [],
+        "artifacts": meta.get("artifacts") or ([
+            {
+                "artifact_id": f"ART-{session_id[:8]}",
+                "filename": f"{media_source.rsplit('.', 1)[0]}.pdf",
+                "format_name": "pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": len(rep_bytes if (has_rep and rep_open) else (pdf_bytes or b"")),
+                "sha256": hashlib.sha256(rep_bytes if (has_rep and rep_open) else (pdf_bytes or b"")).hexdigest(),
+                "category": "VERIFIED" if (is_complete and is_verified) else "PARTIAL",
+                "confidence_score": 100.0 if (is_complete and is_verified) else (round((placed_count / max(1, frag_count)) * 100.0, 1) if placed_count and frag_count else 50.0),
+                "format_confidence": 100.0,
+                "authentic_recovery_pct": 100.0 if (is_complete and is_verified) else (round((placed_count / max(1, frag_count)) * 100.0, 1) if placed_count and frag_count else None),
+                "completeness": "COMPLETE" if (is_complete and is_verified) else "PARTIAL",
+                "integrity_status": "VERIFIED" if (is_complete and is_verified) else "UNVERIFIED",
+                "structural_repair": "SYNTHETIC" if (has_rep and rep_open and not is_complete) else ("NONE (AUTHENTIC)" if (is_complete and is_verified) else "NOT REPAIRED"),
+                "explanation": meta.get("honest_status") or recovery_state_str,
+            }
+        ] if (pdf_bytes or (has_rep and rep_open)) else []),
     }
 
 
@@ -959,6 +1041,15 @@ def run_synthetic_repair_action(
             "repaired_download_url": f"/api/sessions/{session_id}/reconstruction/download?mode=repaired",
             "raw_download_url": f"/api/sessions/{session_id}/reconstruction/download?mode=raw",
         })
+        if "artifacts" in meta and meta["artifacts"]:
+            for a_dict in meta["artifacts"]:
+                if a_dict.get("format_name") == "pdf":
+                    a_dict["structural_repair"] = "SYNTHETIC"
+                    a_dict["integrity_status"] = "UNVERIFIED"
+                    a_dict["completeness"] = "PARTIAL"
+                    a_dict["category"] = RecoveryCategory.PARTIAL.value
+                    if a_dict.get("authentic_recovery_pct") is not None:
+                        a_dict["confidence_score"] = a_dict["authentic_recovery_pct"]
         _RECONSTRUCTED_META[session_id] = meta
 
     return {
@@ -983,6 +1074,26 @@ def get_ai_status() -> dict[str, Any]:
         "data_minimization_enforced": True,
         "prompt_injection_defense": "untrusted_evidence_boundary",
     }
+
+
+@router.post("/ai/test-connection", summary="Test Gemini API connection")
+@router.get("/ai/test-connection", summary="Test Gemini API connection")
+def test_ai_connection() -> dict[str, Any]:
+    """Verify live connectivity and authentication with Google Gemini API."""
+    settings = load_gemini_settings()
+    if not settings.enabled or not settings.api_key:
+        return {
+            "connected": False,
+            "status": "unconfigured",
+            "message": "GEMINI_API_KEY is not configured",
+            "configured": False,
+            "model": None,
+            "latency_ms": 0.0,
+        }
+    client = ResilientGeminiClient(settings=settings)
+    result = client.test_connection()
+    result["configured"] = True
+    return result
 
 
 @router.get("/sessions/{session_id}/ai-analysis", summary="Run or fetch Gemini AI analysis for a session")
@@ -1027,23 +1138,62 @@ def get_session_ai_analysis(
             format_name=a["format_name"],
             mime_type=a["mime_type"],
             size_bytes=a["size_bytes"],
-            sha256=a["sha256"],
+            sha256=a.get("sha256", ""),
             category=RecoveryCategory(a["category"]),
-            confidence_score=a["confidence_score"],
+            confidence_score=a.get("confidence_score", 0.0),
+            format_confidence=a.get("format_confidence"),
+            authentic_recovery_pct=a.get("authentic_recovery_pct"),
+            completeness=a.get("completeness", "COMPLETE" if a.get("category") == "VERIFIED" else "PARTIAL"),
+            integrity_status=a.get("integrity_status", "VERIFIED" if a.get("category") == "VERIFIED" else "UNVERIFIED"),
+            structural_repair=a.get("structural_repair", "NONE"),
             explanation=a.get("explanation", ""),
         )
         for a in meta.get("artifacts", [])
     ]
+    if not artifacts and meta:
+        doc_filename = meta.get("media_source", f"reconstructed_{session_id[:8]}.pdf")
+        doc_format = meta.get("detected_format", "pdf")
+        doc_size = meta.get("pdf_size_bytes") or meta.get("media_size_bytes", 0)
+        doc_sha = meta.get("reconstructed_sha256") or meta.get("partial_sha256") or ""
+        is_ver = meta.get("is_verified", False)
+        is_comp = meta.get("complete", False)
+        auth_rec = 100.0 if is_ver else None
+        if not auth_rec and meta.get("fragments_placed") and meta.get("fragments_carved"):
+            auth_rec = round((meta.get("fragments_placed") / max(1, meta.get("fragments_carved"))) * 100.0, 1)
+
+        artifacts = [
+            RecoveredArtifact(
+                artifact_id=f"ART-{session_id[:8]}",
+                filename=doc_filename,
+                format_name=doc_format,
+                mime_type=f"application/{doc_format}",
+                size_bytes=doc_size,
+                sha256=doc_sha,
+                category=RecoveryCategory.VERIFIED if is_ver else RecoveryCategory.PARTIAL,
+                confidence_score=auth_rec if auth_rec is not None else (100.0 if is_ver else 50.0),
+                format_confidence=100.0,
+                authentic_recovery_pct=auth_rec,
+                completeness="COMPLETE" if (is_comp and is_ver) else "PARTIAL",
+                integrity_status="VERIFIED" if is_ver else "UNVERIFIED",
+                structural_repair="NONE (AUTHENTIC)" if is_ver else ("SYNTHETIC" if meta.get("has_repaired_file") else "NOT REPAIRED"),
+                explanation=f"Reconstructed via TRACE pipeline. Status: {meta.get('honest_status', 'N/A')}",
+            )
+        ]
+
     unplaced_count = meta.get("unplaced_fragments_count", 0)
     ai_res = ai_service.explain_case_recovery(
         case_id=record.case_id or session_id,
         artifacts=artifacts,
         unplaced_fragments_count=unplaced_count,
+        metadata=meta,
     )
 
     ai_data = {
         "success": ai_res.success,
-        "explanation": ai_res.data.model_dump() if ai_res.data else {},
+        "configured": True,
+        "status": "ready" if ai_res.success else "error",
+        "message": "Analysis generated successfully" if ai_res.success else (ai_res.provenance.error or "AI analysis error"),
+        "explanation": ai_res.data.model_dump() if ai_res.data else None,
         "model_used": ai_res.provenance.model_used,
         "fallback_occurred": ai_res.provenance.fallback_occurred,
         "latency_ms": round(ai_res.provenance.latency_ms, 1),
@@ -1082,15 +1232,26 @@ def download_html_report(
             format_name=a["format_name"],
             mime_type=a["mime_type"],
             size_bytes=a["size_bytes"],
-            sha256=a["sha256"],
+            sha256=a.get("sha256", ""),
             category=RecoveryCategory(a["category"]),
-            confidence_score=a["confidence_score"],
+            confidence_score=a.get("confidence_score", 0.0),
+            format_confidence=a.get("format_confidence"),
+            authentic_recovery_pct=a.get("authentic_recovery_pct"),
+            completeness=a.get("completeness", "COMPLETE" if a.get("category") == "VERIFIED" else "PARTIAL"),
+            integrity_status=a.get("integrity_status", "VERIFIED" if a.get("category") == "VERIFIED" else "UNVERIFIED"),
+            structural_repair=a.get("structural_repair", "NONE"),
             explanation=a.get("explanation", ""),
         )
         for a in meta.get("artifacts", [])
     ]
-    if meta.get("has_reconstructed_file") or meta.get("is_intact_passthrough") or meta.get("complete"):
-        cat = RecoveryCategory.VERIFIED if meta.get("is_verified") else (RecoveryCategory.RECOVERED if meta.get("complete") else RecoveryCategory.PARTIAL)
+    if (meta.get("has_reconstructed_file") or meta.get("is_intact_passthrough") or meta.get("complete")) and not any(a.format_name == "pdf" for a in artifacts):
+        is_ver = bool(meta.get("is_verified"))
+        is_comp = bool(meta.get("complete"))
+        cat = RecoveryCategory.VERIFIED if is_ver else (RecoveryCategory.RECOVERED if is_comp else RecoveryCategory.PARTIAL)
+        auth_rec = 100.0 if is_ver else None
+        if not auth_rec and meta.get("fragments_placed") and meta.get("fragments_carved"):
+            auth_rec = round((meta.get("fragments_placed") / max(1, meta.get("fragments_carved"))) * 100.0, 1)
+
         artifacts.insert(0, RecoveredArtifact(
             artifact_id="REC-PDF-001",
             filename=f"reconstructed_{session_id[:8]}.pdf",
@@ -1099,7 +1260,12 @@ def download_html_report(
             size_bytes=meta.get("pdf_size_bytes", 0) or 0,
             sha256=meta.get("reconstructed_sha256", "") or "",
             category=cat,
-            confidence_score=100.0 if meta.get("is_verified") else 90.0,
+            confidence_score=auth_rec if auth_rec is not None else (100.0 if is_ver else 50.0),
+            format_confidence=100.0,
+            authentic_recovery_pct=auth_rec,
+            completeness="COMPLETE" if (is_comp and is_ver) else "PARTIAL",
+            integrity_status="VERIFIED" if is_ver else "UNVERIFIED",
+            structural_repair="NONE (AUTHENTIC)" if is_ver else ("SYNTHETIC" if meta.get("has_repaired_file") else "NOT REPAIRED"),
             explanation=meta.get("forensic_notice", ""),
         ))
 
@@ -1143,9 +1309,14 @@ def download_json_report(
             format_name=a["format_name"],
             mime_type=a["mime_type"],
             size_bytes=a["size_bytes"],
-            sha256=a["sha256"],
+            sha256=a.get("sha256", ""),
             category=RecoveryCategory(a["category"]),
-            confidence_score=a["confidence_score"],
+            confidence_score=a.get("confidence_score", 0.0),
+            format_confidence=a.get("format_confidence"),
+            authentic_recovery_pct=a.get("authentic_recovery_pct"),
+            completeness=a.get("completeness", "COMPLETE" if a.get("category") == "VERIFIED" else "PARTIAL"),
+            integrity_status=a.get("integrity_status", "VERIFIED" if a.get("category") == "VERIFIED" else "UNVERIFIED"),
+            structural_repair=a.get("structural_repair", "NONE"),
             explanation=a.get("explanation", ""),
         )
         for a in meta.get("artifacts", [])

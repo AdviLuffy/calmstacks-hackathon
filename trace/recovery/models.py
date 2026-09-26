@@ -92,6 +92,11 @@ class RecoveredArtifact:
     ai_assisted: bool = False
     ai_provenance: Mapping[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+    authentic_recovery_pct: float | None = None
+    completeness: str = "UNKNOWN"
+    integrity_status: str = "UNVERIFIED"
+    structural_repair: str = "NONE"
+    format_confidence: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -103,6 +108,11 @@ class RecoveredArtifact:
             "sha256": self.sha256,
             "category": self.category.value,
             "confidence_score": round(self.confidence_score, 1),
+            "format_confidence": round(self.format_confidence, 1) if self.format_confidence is not None else None,
+            "authentic_recovery_pct": round(self.authentic_recovery_pct, 1) if self.authentic_recovery_pct is not None else None,
+            "completeness": self.completeness,
+            "integrity_status": self.integrity_status,
+            "structural_repair": self.structural_repair,
             "fragments_used_count": len(self.fragments_used),
             "fragments_used": self.fragments_used,
             "fragments_unplaced_count": len(self.fragments_unplaced),

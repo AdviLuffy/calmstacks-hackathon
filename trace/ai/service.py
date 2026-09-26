@@ -86,6 +86,7 @@ class GeminiForensicService:
         case_id: str,
         artifacts: Sequence[RecoveredArtifact],
         unplaced_fragments_count: int = 0,
+        metadata: Mapping[str, Any] | None = None,
     ) -> AIResponse:
         """Generate factual investigator summary for recovered evidence."""
         summary = [
@@ -102,5 +103,11 @@ class GeminiForensicService:
             case_id=case_id,
             artifacts_summary=summary,
             unplaced_count=unplaced_fragments_count,
+            session_metadata=metadata,
         )
         return self.client.generate_structured(prompt, AIEvidenceExplanation)
+
+    def test_connection(self) -> dict[str, Any]:
+        """Test API connectivity using a minimal prompt without exposing secrets."""
+        return self.client.test_connection()
+

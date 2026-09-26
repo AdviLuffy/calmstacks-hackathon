@@ -111,9 +111,21 @@ class ResilientGeminiClient:
                     else:
                         raise RuntimeError("google-genai SDK not initialized")
 
-                    # Validate structured JSON output with Pydantic
-                    parsed_json = json.loads(raw_text)
-                    validated_obj = response_schema.model_validate(parsed_json)
+                    # Validate structured output (supports direct response.parsed or clean JSON)
+                    if hasattr(response, "parsed") and isinstance(response.parsed, response_schema):
+                        validated_obj = response.parsed
+                    else:
+                        clean_text = raw_text.strip()
+                        if clean_text.startswith("```json"):
+                            clean_text = clean_text[7:]
+                        elif clean_text.startswith("```"):
+                            clean_text = clean_text[3:]
+                        if clean_text.endswith("```"):
+                            clean_text = clean_text[:-3]
+                        clean_text = clean_text.strip()
+
+                        parsed_json = json.loads(clean_text)
+                        validated_obj = response_schema.model_validate(parsed_json)
 
                     attempt_info["status"] = "success"
                     prov.model_used = model_name
@@ -168,3 +180,70 @@ class ResilientGeminiClient:
         prov.error = f"All configured Gemini models failed. Last error: {last_error}"
         prov.latency_ms = (time.time() - start_time) * 1000
         return AIResponse(success=False, provenance=prov)
+
+    def test_connection(self) -> dict[str, Any]:
+        """Test API connectivity using a minimal prompt without exposing secrets."""
+        start_time = time.time()
+        if not self.settings.enabled or not self.settings.api_key:
+            return {
+                "connected": False,
+                "status": "unconfigured",
+                "message": "GEMINI_API_KEY is not configured",
+                "latency_ms": 0.0,
+            }
+
+        if not SDK_AVAILABLE:
+            return {
+                "connected": False,
+                "status": "sdk_missing",
+                "message": "google-genai SDK is not installed",
+                "latency_ms": 0.0,
+            }
+
+        models = list(self.settings.model_preference)
+        for model_name in models:
+            try:
+                if not self._genai_client:
+                    self._genai_client = genai.Client(api_key=self.settings.api_key)
+
+                response = self._genai_client.models.generate_content(
+                    model=model_name,
+                    contents="Ping",
+                )
+                latency = round((time.time() - start_time) * 1000, 1)
+                return {
+                    "connected": True,
+                    "status": "connected",
+                    "model": model_name,
+                    "message": "Successfully connected to Google Gemini API",
+                    "latency_ms": latency,
+                }
+            except Exception as exc:
+                err_str = str(exc).lower()
+                if "api_key" in err_str or "unauthorized" in err_str or "401" in err_str or "403" in err_str:
+                    return {
+                        "connected": False,
+                        "status": "auth_error",
+                        "error": "Authentication failed: invalid or unauthorized API key",
+                        "message": "Invalid API key",
+                        "latency_ms": round((time.time() - start_time) * 1000, 1),
+                    }
+                if "quota" in err_str or "exhausted" in err_str:
+                    return {
+                        "connected": False,
+                        "status": "quota_exhausted",
+                        "error": "API Quota exhausted",
+                        "message": "API Quota exhausted",
+                        "latency_ms": round((time.time() - start_time) * 1000, 1),
+                    }
+                # Model not found or unsupported -> try next model in preference queue
+                continue
+
+        return {
+            "connected": False,
+            "status": "error",
+            "error": "Failed to connect to any configured Gemini model",
+            "message": "Connection test failed",
+            "latency_ms": round((time.time() - start_time) * 1000, 1),
+        }
+
