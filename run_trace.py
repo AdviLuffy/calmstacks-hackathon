@@ -23,6 +23,16 @@ os.environ.setdefault("TRACE_RECOVERY_MODE", "real")
 os.environ.setdefault("TRACE_AI_MODE", "real")
 os.environ.setdefault("TRACE_PERSIST_SESSIONS", "true")
 
+# Load local .env file if present for development
+env_file = ROOT_DIR / ".env"
+if env_file.is_file():
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(dotenv_path=env_file)
+    except Exception:
+        pass
+
 if __name__ == "__main__":
     import uvicorn
 

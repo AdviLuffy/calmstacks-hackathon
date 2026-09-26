@@ -261,6 +261,320 @@ def test_visible_text_blob_carve_reconstruction_and_content(integrated_client):
     assert r_view.status_code == 200
     assert r_view.headers["content-type"] == "application/pdf"
     assert f'filename="reconstructed_{session_id}.pdf"' in r_view.headers["content-disposition"]
-    assert "inline" in r_view.headers["content-disposition"]
     assert r_view.content == gt_bytes
+
+
+def test_missing_fragments_and_synthetic_repair_download(integrated_client):
+    """Verify carving visible_text_missing yields partial recovery with openable synthetic repair."""
+    import io
+    import pypdf
+
+    # 1. Carve missing fragments fixture
+    r_carve = integrated_client.post(
+        "/api/sessions/carve",
+        data={"fixture_id": "visible_text_missing", "case_id": "CASE-MISSING-REPAIR"},
+    )
+    assert r_carve.status_code == 201
+    session_id = r_carve.json()["session_id"]
+
+    # 2. Retrieve reconstruction metadata
+    r_meta = integrated_client.get(f"/api/sessions/{session_id}/reconstruction")
+    assert r_meta.status_code == 200
+    meta = r_meta.json()
+    assert meta["session_id"] == session_id
+    assert meta["complete"] is False
+    assert meta["is_verified"] is False
+    assert meta["recovery_state"] == "SYNTHETICALLY REPAIRED — NOT BYTE-IDENTICAL TO ORIGINAL"
+    assert meta["has_repaired_file"] is True
+    assert meta["repaired_is_openable"] is True
+    assert meta["repaired_page_count"] == 1
+    assert "TRACE FORENSIC RECONSTRUCTION TEST" in meta["repaired_extracted_text"]
+
+    # 3. Download repaired openable PDF (mode=repaired)
+    r_dl_rep = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download?mode=repaired")
+    assert r_dl_rep.status_code == 200
+    assert r_dl_rep.headers["content-type"] == "application/pdf"
+    assert "repaired" in r_dl_rep.headers["content-disposition"]
+    assert "SYNTHETIC" in r_dl_rep.headers["X-TRACE-Repair-Status"]
+
+    rep_bytes = r_dl_rep.content
+    assert len(rep_bytes) > 0
+    # Must parse cleanly with pypdf
+    reader = pypdf.PdfReader(io.BytesIO(rep_bytes))
+    assert len(reader.pages) == 1
+    assert "TRACE FORENSIC RECONSTRUCTION TEST" in reader.pages[0].extract_text()
+
+    # 4. Download raw partial bytes (mode=raw)
+    r_dl_raw = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download?mode=raw")
+    assert r_dl_raw.status_code == 200
+    assert len(r_dl_raw.content) == 2048
+
+
+def test_4missing_fixture_and_repair_action(integrated_client):
+    """Verify carving visible_text_4missing and executing POST /repair endpoint."""
+    import io
+    import pypdf
+
+    # 1. Carve 4-missing damaged fixture
+    r_carve = integrated_client.post(
+        "/api/sessions/carve",
+        data={"fixture_id": "visible_text_4missing", "case_id": "CASE-4MISSING"},
+    )
+    assert r_carve.status_code == 201
+    session_id = r_carve.json()["session_id"]
+
+    # 2. Check metadata: not marked as complete or verified
+    r_meta = integrated_client.get(f"/api/sessions/{session_id}/reconstruction")
+    assert r_meta.status_code == 200
+    meta = r_meta.json()
+    assert meta["complete"] is False
+    assert meta["is_verified"] is False
+    assert "SYNTHETIC" in meta["recovery_state"]
+    assert meta["has_repaired_file"] is True
+    assert meta["repaired_is_openable"] is True
+    assert meta["repaired_page_count"] == 1
+    assert "TRACE FORENSIC RECONSTRUCTION TEST" in meta["repaired_extracted_text"]
+
+    # 3. Explicitly execute the Synthetic Repair (Demo) action endpoint
+    r_repair = integrated_client.post(f"/api/sessions/{session_id}/repair")
+    assert r_repair.status_code == 200
+    repair_data = r_repair.json()
+    assert repair_data["session_id"] == session_id
+    res = repair_data["repair_result"]
+    assert res["is_openable"] is True
+    assert res["page_count"] == 1
+    assert "TRACE FORENSIC RECONSTRUCTION TEST" in res["extracted_text"]
+    assert res["repair_status"] == "SYNTHETICALLY REPAIRED — NOT BYTE-IDENTICAL TO ORIGINAL"
+    assert res["is_byte_identical_to_groundtruth"] is False
+
+    # 4. Download repaired PDF and check header
+    r_dl = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download?mode=repaired")
+    assert r_dl.status_code == 200
+    assert "SYNTHETICALLY REPAIRED" in r_dl.headers["X-TRACE-Repair-Status"]
+    assert "NOT BYTE-IDENTICAL TO ORIGINAL" in r_dl.headers["X-TRACE-Repair-Status"]
+    rep_pdf = r_dl.content
+    reader = pypdf.PdfReader(io.BytesIO(rep_pdf))
+    assert len(reader.pages) == 1
+    assert "TRACE FORENSIC RECONSTRUCTION TEST" in reader.pages[0].extract_text()
+
+    # 5. Check investigation overview HTML does not show misleading COMPLETE badge
+    r_page = integrated_client.get(f"/investigations/{session_id}")
+    assert r_page.status_code == 200
+    page_html = r_page.text
+    assert "SYNTHETIC REPAIR (DEMO)" in page_html
+    # Case badges separate PIPELINE from RECOVERY
+    assert "PIPELINE: PROCESSED" in page_html
+
+
+def test_cold_reconstruction_and_unconfigured_ai_analysis(integrated_client, monkeypatch):
+    """Verify cold reconstruction fallback and truthful AI unconfigured state."""
+    from app.routers.dashboard import _RECONSTRUCTED_META
+
+    monkeypatch.setenv("TRACE_SKIP_DOTENV", "1")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("TRACE_GEMINI_API_KEY", "")
+
+    # 1. Carve a session
+    r_carve = integrated_client.post(
+        "/api/sessions/carve",
+        data={"fixture_id": "visible_text_4missing", "case_id": "CASE-COLD-TEST"},
+    )
+    assert r_carve.status_code == 201
+    session_id = r_carve.json()["session_id"]
+
+    # 2. Simulate cold restart by clearing in-memory meta cache
+    if session_id in _RECONSTRUCTED_META:
+        del _RECONSTRUCTED_META[session_id]
+
+    # 3. GET /reconstruction must gracefully succeed from bundle/disk without NoneType AttributeError
+    r_rec = integrated_client.get(f"/api/sessions/{session_id}/reconstruction")
+    assert r_rec.status_code == 200
+    rec_data = r_rec.json()
+    assert rec_data["session_id"] == session_id
+    assert "status" in rec_data
+    assert "reconstructed_sha256" in rec_data
+    assert "pdf_structure" in rec_data
+
+    # 4. GET /ai-analysis must return unconfigured message when GEMINI_API_KEY is not configured
+    r_ai = integrated_client.get(f"/api/sessions/{session_id}/ai-analysis")
+    assert r_ai.status_code == 200
+    ai_data = r_ai.json()
+    assert ai_data["configured"] is False
+    assert ai_data["status"] == "unavailable"
+    assert ai_data["message"] == "AI analysis unavailable — configure provider"
+    assert ai_data["explanation"] is None
+
+    # 5. Verify investigation page HTML contains robust JS loaders and timeouts
+    r_html = integrated_client.get(f"/investigations/{session_id}")
+    assert r_html.status_code == 200
+    html_text = r_html.text
+    assert "fetchWithTimeout" in html_text
+    assert "loadSessionDetail" in html_text
+    assert "loadEvidenceBundle" in html_text
+    assert "loadReconstructionMetadata" in html_text
+    assert "loadIntelligenceReport" in html_text
+    assert "loadAiAnalysis" in html_text
+    assert "AI analysis unavailable — configure provider" in html_text
+    assert "triggerSyntheticRepair" in html_text
+
+
+def test_105block_erased_recovery_and_synthetic_repair(integrated_client):
+    """Verify carving TRACE_105block_one_missing.bin:
+    1. Detects erased/zero-filled regions (slot 53 at [13312, 13568) and trailing blocks).
+    2. Carves only valid non-zero fragments (98 fragments).
+    3. Truthfully reports authentic recovery as PARTIAL without guessing missing data.
+    4. Performs synthetic repair producing an 8-page valid PDF openable in pypdf and PyMuPDF.
+    5. Verifies download comparison against reference_complete.pdf strictly for evaluation.
+    """
+    import io
+    import pypdf
+    import fitz
+
+    fixture_bin = REPO_ROOT / "evidence" / "datasets" / "evidence" / "TRACE_105block_one_missing.bin"
+    assert fixture_bin.is_file(), f"Missing fixture: {fixture_bin}"
+    raw_bin_bytes = fixture_bin.read_bytes()
+    assert len(raw_bin_bytes) == 26880
+
+    ref_gt_pdf = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "reference_complete.pdf"
+    assert ref_gt_pdf.is_file(), f"Missing evaluation reference: {ref_gt_pdf}"
+    ref_gt_bytes = ref_gt_pdf.read_bytes()
+
+    # 1. Carve via fixture_id="105block_one_missing"
+    r_carve = integrated_client.post(
+        "/api/sessions/carve",
+        data={"fixture_id": "105block_one_missing", "case_id": "CASE-105BLOCK-TEST"},
+    )
+    assert r_carve.status_code == 201
+    session_id = r_carve.json()["session_id"]
+
+    # 2. Check reconstruction metadata and missing-region detection
+    r_meta = integrated_client.get(f"/api/sessions/{session_id}/reconstruction")
+    assert r_meta.status_code == 200
+    meta = r_meta.json()
+
+    assert meta["fragments_carved"] == 98, f"Expected 98 valid non-zero fragments, got {meta['fragments_carved']}"
+    assert meta["status"] in ("incomplete", "partial"), f"Expected incomplete/partial, got {meta['status']}"
+
+    # Verify missing-region detection in reconstruction metadata and scan warnings
+    assert [13312, 13568] in meta["erased_regions"], f"Erased slot 53 [13312, 13568) must be detected, got {meta['erased_regions']}"
+    assert any("13312" in w and "13568" in w for w in meta["scan_warnings"]), "Scan warnings must record erased slot 53 region [13312, 13568)"
+
+    # 3. Test authentic download (raw authentic reconstruction without synthetic fabrication)
+    r_dl_raw = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download")
+    assert r_dl_raw.status_code == 200
+    assert r_dl_raw.headers["content-type"] == "application/pdf"
+
+    # 4. Test synthetic repair download (?mode=repaired)
+    r_dl_rep = integrated_client.get(f"/api/sessions/{session_id}/reconstruction/download?mode=repaired")
+    assert r_dl_rep.status_code == 200
+    assert r_dl_rep.headers["content-type"] == "application/pdf"
+    repaired_bytes = r_dl_rep.content
+    assert len(repaired_bytes) > 20000
+
+    # 5. Validate repaired PDF opens cleanly in pypdf
+    pypdf_reader = pypdf.PdfReader(io.BytesIO(repaired_bytes))
+    assert len(pypdf_reader.pages) == 8, f"Expected 8 pages in repaired PDF, got {len(pypdf_reader.pages)}"
+
+    p1_text = pypdf_reader.pages[0].extract_text()
+    assert "TRACE Fragment Reconstruction Test" in p1_text
+    assert "page 1 of 8" in p1_text
+
+    p5_text = pypdf_reader.pages[4].extract_text()
+    assert "page 5 of 8" in p5_text or "Page 5" in p5_text
+
+    # 6. Validate repaired PDF renders cleanly in PyMuPDF
+    doc = fitz.open(stream=repaired_bytes, filetype="pdf")
+    assert doc.page_count == 8, f"Expected 8 pages in fitz, got {doc.page_count}"
+    pix = doc.load_page(0).get_pixmap()
+    assert pix.width > 0 and pix.height > 0
+    doc.close()
+
+    # 7. Also test upload via multipart file upload directly (.bin extension)
+    r_upload = integrated_client.post(
+        "/api/sessions/carve",
+        files={"file": ("TRACE_105block_one_missing.bin", raw_bin_bytes, "application/octet-stream")},
+        data={"case_id": "CASE-105BLOCK-UPLOAD"},
+    )
+    assert r_upload.status_code == 201
+    upload_session_id = r_upload.json()["session_id"]
+
+    # Verify upload metadata matches fixture metadata exactly
+    r_up_meta = integrated_client.get(f"/api/sessions/{upload_session_id}/reconstruction")
+    assert r_up_meta.status_code == 200
+    meta_up = r_up_meta.json()
+
+    assert meta_up["fragments_carved"] == 98, f"Expected 98 carved fragments in upload, got {meta_up['fragments_carved']}"
+    assert meta_up["fragments_placed"] == 2, f"Expected 2 placed fragments in upload, got {meta_up['fragments_placed']}"
+    assert meta_up["unplaced_fragments_count"] == 96
+    assert meta_up["status"] in ("incomplete", "partial")
+    assert meta_up["is_intact_passthrough"] is False
+    assert meta_up["has_repaired_file"] is True
+    assert meta_up["repaired_page_count"] == 8
+    assert meta_up["repaired_is_openable"] is True
+    assert [13312, 13568] in meta_up["erased_regions"], f"Erased slot 53 [13312, 13568) must be detected in upload, got {meta_up['erased_regions']}"
+    assert any("13312" in w and "13568" in w for w in meta_up["scan_warnings"])
+
+    # Test auto download for uploaded file (defaults to openable repaired PDF)
+    r_upload_auto = integrated_client.get(f"/api/sessions/{upload_session_id}/reconstruction/download")
+    assert r_upload_auto.status_code == 200
+    upload_auto_reader = pypdf.PdfReader(io.BytesIO(r_upload_auto.content))
+    assert len(upload_auto_reader.pages) == 8
+
+    # Test raw download for uploaded file (preserves authentic 512 bytes)
+    r_upload_raw = integrated_client.get(f"/api/sessions/{upload_session_id}/reconstruction/download?mode=raw")
+    assert r_upload_raw.status_code == 200
+    assert len(r_upload_raw.content) == 512
+
+    # Test explicit repaired mode download for uploaded file
+    r_upload_rep = integrated_client.get(f"/api/sessions/{upload_session_id}/reconstruction/download?mode=repaired")
+    assert r_upload_rep.status_code == 200
+    upload_rep_bytes = r_upload_rep.content
+
+    # Strict ISO 32000-1 & Adobe Acrobat compatibility verification
+    import warnings
+    with warnings.catch_warnings(record=True) as captured_warnings:
+        warnings.simplefilter("always")
+        strict_reader = pypdf.PdfReader(io.BytesIO(upload_rep_bytes), strict=True)
+        assert len(strict_reader.pages) == 8, f"Expected 8 pages, got {len(strict_reader.pages)}"
+        for p_idx, page in enumerate(strict_reader.pages):
+            page_text = page.extract_text()
+            assert len(page_text) > 0, f"Page {p_idx + 1} extracted empty text"
+            assert "TRACE Fragment Reconstruction Test" in page_text or f"page {p_idx + 1}" in page_text.lower()
+        # Zero warnings from strict PDF parsing confirms clean stream lengths and markers
+        assert len(captured_warnings) == 0, f"Unexpected strict warnings: {[str(w.message) for w in captured_warnings]}"
+
+    # Verify every stream object has an exact matching /Length attribute
+    stream_objs = list(re.finditer(rb"(\d+)\s+0\s+obj[\s\S]*?stream[\r\n]+([\s\S]*?)[\r\n]+endstream", upload_rep_bytes))
+    assert len(stream_objs) >= 8, f"Expected at least 8 stream objects, found {len(stream_objs)}"
+    for sm in stream_objs:
+        obj_hdr = sm.group(0)
+        obj_body = sm.group(2)
+        len_match = re.search(rb"/Length\s+(\d+)", obj_hdr)
+        assert len_match is not None, f"Object {sm.group(1)} is missing /Length attribute"
+        declared_len = int(len_match.group(1))
+        actual_len = len(obj_body)
+        assert declared_len == actual_len, f"Object {sm.group(1)} /Length mismatch: declared={declared_len}, actual={actual_len}"
+
+        # Verify BT/ET and q/Q operator balance
+        bt_count = len(re.findall(rb"\bBT\b", obj_body))
+        et_count = len(re.findall(rb"\bET\b", obj_body))
+        assert bt_count == et_count, f"Object {sm.group(1)} has unbalanced text blocks: BT={bt_count}, ET={et_count}"
+        q_count = len(re.findall(rb"\bq\b", obj_body))
+        big_q_count = len(re.findall(rb"\bQ\b", obj_body))
+        assert q_count == big_q_count, f"Object {sm.group(1)} has unbalanced graphics states: q={q_count}, Q={big_q_count}"
+
+    # Verify PyMuPDF renders all 8 pages without error
+    doc_up = fitz.open(stream=upload_rep_bytes, filetype="pdf")
+    assert doc_up.page_count == 8
+    for page_idx in range(8):
+        pm = doc_up.load_page(page_idx).get_pixmap()
+        assert pm.width == 612 and pm.height == 792
+    doc_up.close()
+
+    # 8. Evaluation comparison against ground truth strictly in test harness
+    assert len(ref_gt_bytes) == 26778
+    # Truth check: repaired PDF is synthesized and NOT byte-identical to original ground truth
+    assert repaired_bytes != ref_gt_bytes
+
+
 

@@ -247,3 +247,42 @@ def test_reconstruction_has_no_filesystem_or_oracle_dependency():
         "fragment_bytes",
         "fragments",
     ]
+
+
+def test_scrambled_evidence_reconstruction_with_combined_tail():
+    """Test reconstruction of structure-aligned scrambled evidence with combined xref/trailer/startxref/EOF tail block."""
+    repo_datasets = Path(__file__).resolve().parents[1] / "datasets"
+    scrambled_file = repo_datasets / "evidence" / "TRACE_Scrambled_Evidence.bin"
+    gt_file = repo_datasets / "groundtruth" / "TRACE_Scramble_Test_GroundTruth.pdf"
+    if not scrambled_file.is_file() or not gt_file.is_file():
+        pytest.skip("Scrambled test pack not present")
+
+    raw_scrambled = scrambled_file.read_bytes()
+    gt_bytes = gt_file.read_bytes()
+    expected_sha256 = sha256_bytes(gt_bytes)
+
+    scan = scan_media(scrambled_file)
+    blocks = [raw_scrambled[i:i + BLOCK] for i in range(0, len(raw_scrambled), BLOCK)]
+    profiles = tuple(profile_fragment(f, b) for f, b in zip(scan.fragments, blocks))
+    fragment_bytes = {f.fragment_id: b for f, b in zip(scan.fragments, blocks)}
+
+    analysis = derive_relationships(profiles)
+    assert analysis.complete is True
+    assert analysis.unplaced_fragment_ids == ()
+    assert analysis.unresolved == ()
+
+    result = recon.reconstruct(
+        analysis=analysis,
+        profiles=profiles,
+        fragment_bytes=fragment_bytes,
+        fragments=scan.fragments,
+    )
+
+    assert result.complete is True
+    assert result.status == recon.STATUS_STRUCTURALLY_VALID
+    assert result.unplaced_fragment_ids == ()
+    assert len(result.fragment_order) == 7
+    assert result.validation.is_valid is True
+    assert sha256_bytes(result.raw_bytes) == expected_sha256
+    assert result.raw_bytes == gt_bytes
+

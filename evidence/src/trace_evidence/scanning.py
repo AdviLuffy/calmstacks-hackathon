@@ -25,6 +25,7 @@ class ScanResult:
     media_sha256: str
     fragments: tuple[Fragment, ...]
     warnings: tuple[str, ...]
+    erased_regions: tuple[tuple[int, int], ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -32,6 +33,7 @@ class ScanResult:
             "media_sha256": self.media_sha256,
             "fragments": [fragment.to_dict() for fragment in self.fragments],
             "warnings": list(self.warnings),
+            "erased_regions": [list(r) for r in self.erased_regions],
         }
 
 
@@ -40,6 +42,8 @@ def scan_media(media_path: str | Path, block_size: int = BLOCK_SIZE) -> ScanResu
 
     The image is streamed so a large image is never fully resident in memory, and
     it is opened ``"rb"`` only so the evidence is preserved byte-for-byte.
+    Zero-filled blocks are recognized as erased / unallocated regions, recorded in
+    warnings and erased_regions, and excluded from valid fragments.
     """
     if block_size <= 0:
         raise ValueError("block_size must be > 0")
@@ -47,6 +51,7 @@ def scan_media(media_path: str | Path, block_size: int = BLOCK_SIZE) -> ScanResu
     path = Path(media_path)
     fragments: list[Fragment] = []
     warnings: list[str] = []
+    erased_regions: list[tuple[int, int]] = []
     offset = 0
 
     with open(path, "rb") as handle:
@@ -58,6 +63,12 @@ def scan_media(media_path: str | Path, block_size: int = BLOCK_SIZE) -> ScanResu
             start = offset
             end = offset + len(block)
             offset = end
+
+            if len(block) > 0 and block == b"\x00" * len(block):
+                message = f"erased/zero-filled region detected at byte_range [{start}, {end})"
+                warnings.append(message)
+                erased_regions.append((start, end))
+                continue
 
             block_warnings: tuple[str, ...] = ()
             if len(block) < block_size:
@@ -86,4 +97,5 @@ def scan_media(media_path: str | Path, block_size: int = BLOCK_SIZE) -> ScanResu
         media_sha256=sha256_file(path),
         fragments=tuple(fragments),
         warnings=tuple(warnings),
+        erased_regions=tuple(erased_regions),
     )

@@ -22,6 +22,10 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from .constants import (
+    RECOVERY_COMPLETE_VERIFIED,
+    RECOVERY_CORRUPTED,
+    RECOVERY_PARTIAL,
+    RECOVERY_UNRECOVERABLE,
     STATUS_FAILED,
     STATUS_INCOMPLETE,
     STATUS_STRUCTURALLY_VALID,
@@ -81,6 +85,9 @@ class IntegrityReport:
     original_sha256: str | None = None
     byte_match: bool | None = None
     warnings: tuple[str, ...] = ()
+    recovery_state: str = RECOVERY_UNRECOVERABLE
+    missing_elements: tuple[str, ...] = ()
+    corrupted_fragment_ids: tuple[str, ...] = ()
 
     @property
     def is_verified(self) -> bool:
@@ -91,11 +98,14 @@ class IntegrityReport:
         """Human-readable dictionary representation."""
         return {
             "status": self.status,
+            "recovery_state": self.recovery_state,
             "reconstructed_size_bytes": self.reconstructed_size_bytes,
             "reconstructed_sha256": self.reconstructed_sha256,
             "verified_against_original": self.verified_against_original,
             "original_sha256": self.original_sha256,
             "byte_match": self.byte_match,
+            "missing_elements": list(self.missing_elements),
+            "corrupted_fragment_ids": list(self.corrupted_fragment_ids),
             "provenance": [
                 {
                     "output_range": list(p.output_range),
@@ -196,6 +206,10 @@ def verify_integrity(
     status = reconstruction.status
     warnings = list(reconstruction.warnings)
 
+    missing_elements = getattr(reconstruction, "missing_elements", ())
+    corrupted_fragment_ids = getattr(reconstruction, "corrupted_fragment_ids", ())
+    recovery_state = getattr(reconstruction, "recovery_state", RECOVERY_UNRECOVERABLE)
+
     if original_bytes is None:
         return IntegrityReport(
             status=status,
@@ -207,6 +221,9 @@ def verify_integrity(
             original_sha256=None,
             byte_match=None,
             warnings=tuple(warnings),
+            recovery_state=recovery_state,
+            missing_elements=missing_elements,
+            corrupted_fragment_ids=corrupted_fragment_ids,
         )
 
     # An original was supplied for independent verification
@@ -217,26 +234,47 @@ def verify_integrity(
         # Invariant: Never promote incomplete or failed reconstruction to verified
         if reconstruction.status == STATUS_STRUCTURALLY_VALID and reconstruction.complete:
             status = STATUS_VERIFIED
+            recovery_state = RECOVERY_COMPLETE_VERIFIED
         else:
             warnings.append(
                 f"byte match holds but reconstruction status is {reconstruction.status!r}; not verified"
             )
+            recovery_state = (
+                RECOVERY_PARTIAL
+                if reconstruction.status == STATUS_INCOMPLETE and len(reconstruction.raw_bytes) > 0
+                else getattr(reconstruction, "recovery_state", RECOVERY_UNRECOVERABLE)
+            )
     else:
-        status = STATUS_FAILED
-        mismatch_offset = next(
-            (
-                i
-                for i, (a, b) in enumerate(
-                    zip(reconstruction.raw_bytes, original_bytes)
-                )
-                if a != b
-            ),
-            min(len(reconstruction.raw_bytes), len(original_bytes)),
-        )
-        warnings.append(
-            f"byte mismatch against original at offset {mismatch_offset} "
-            f"(lengths: reconstructed={len(reconstruction.raw_bytes)}, original={len(original_bytes)})"
-        )
+        # Check if incomplete reconstruction authentically matches prefix of original
+        if (
+            reconstruction.status == STATUS_INCOMPLETE
+            and len(reconstruction.raw_bytes) > 0
+            and len(reconstruction.raw_bytes) < len(original_bytes)
+            and original_bytes[:len(reconstruction.raw_bytes)] == reconstruction.raw_bytes
+        ):
+            status = STATUS_INCOMPLETE
+            recovery_state = RECOVERY_PARTIAL
+            warnings.append(
+                f"partial reconstruction matches original prefix ({len(reconstruction.raw_bytes)} of "
+                f"{len(original_bytes)} bytes recovered); missing fragments prevent full file match"
+            )
+        else:
+            status = STATUS_FAILED
+            recovery_state = RECOVERY_CORRUPTED
+            mismatch_offset = next(
+                (
+                    i
+                    for i, (a, b) in enumerate(
+                        zip(reconstruction.raw_bytes, original_bytes)
+                    )
+                    if a != b
+                ),
+                min(len(reconstruction.raw_bytes), len(original_bytes)),
+            )
+            warnings.append(
+                f"byte mismatch against original at offset {mismatch_offset} "
+                f"(lengths: reconstructed={len(reconstruction.raw_bytes)}, original={len(original_bytes)})"
+            )
 
     return IntegrityReport(
         status=status,
@@ -248,4 +286,7 @@ def verify_integrity(
         original_sha256=original_sha256,
         byte_match=byte_match,
         warnings=tuple(warnings),
+        recovery_state=recovery_state,
+        missing_elements=missing_elements,
+        corrupted_fragment_ids=corrupted_fragment_ids,
     )

@@ -29,20 +29,27 @@ def investigations_list_page() -> str:
       <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 1rem;">
         Launch an authentic end-to-end carving or contract validation pipeline in one click using verified repository fixtures.
       </p>
-      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-        <button onclick="launchFixture('visible_text_blob')" class="btn btn-primary btn-sm" id="btn-fix-visible">
-          [RUN] Visible Text PDF Blob (blob_visible_text.bin &bull; 10 fragments &bull; Visible Content Test)
+        <button onclick="launchFixture('visible_text_4missing')" class="btn btn-primary btn-sm" id="btn-fix-4missing-repair" style="background: rgba(168, 85, 247, 0.2); border-color: rgba(168, 85, 247, 0.6); color: #e9d5ff;">
+          [SYNTHETIC REPAIR (DEMO)] Damaged Reference (4 Missing Frags: xref, trailer, startxref, EOF)
+        </button>
+        <button onclick="launchFixture('visible_text_missing')" class="btn btn-secondary btn-sm" id="btn-fix-missing-repair">
+          [SYNTHETIC REPAIR] Missing Startxref &bull; 8 frags
+        </button>
+        <button onclick="launchFixture('judge_scenario_a')" class="btn btn-secondary btn-sm" id="btn-fix-judge-a">
+          [JUDGE A] Complete (10 frags &bull; 100% Verified)
+        </button>
+        <button onclick="launchFixture('judge_scenario_b')" class="btn btn-secondary btn-sm" id="btn-fix-judge-b">
+          [JUDGE B] Missing (8 frags &bull; Partial)
+        </button>
+        <button onclick="launchFixture('judge_scenario_c')" class="btn btn-secondary btn-sm" id="btn-fix-judge-c">
+          [JUDGE C] Corrupted (10 frags &bull; Detected)
+        </button>
+        <button onclick="launchFixture('visible_text_blob')" class="btn btn-secondary btn-sm" id="btn-fix-visible">
+          [RUN] Visible Text PDF Blob (blob_visible_text.bin)
         </button>
         <button onclick="launchFixture('synthetic_blob')" class="btn btn-secondary btn-sm" id="btn-fix-blob">
-          [RUN] Blank Canvas PDF Blob (blob_1337.bin &bull; 8 fragments)
+          [RUN] Blank Canvas PDF Blob (blob_1337.bin)
         </button>
-        <button onclick="launchFixture('bundle_minimal')" class="btn btn-secondary btn-sm" id="btn-fix-min">
-          [LOAD] Contract Floor Bundle (bundle_minimal.json &bull; 0 fragments)
-        </button>
-        <button onclick="launchFixture('bundle_realistic')" class="btn btn-secondary btn-sm" id="btn-fix-real">
-          [LOAD] Multi-Fragment Bundle (bundle_realistic.json &bull; 5 fragments)
-        </button>
-      </div>
       <div id="quick-status" style="margin-top: 0.75rem; display: none;" class="notice notice-info"></div>
     </div>
 
@@ -110,9 +117,14 @@ def investigations_list_page() -> str:
         const recTag = rec ? (rec.status === 'ok' ? '<span class="tag tag-green">OK</span>' : '<span class="tag tag-red">FAILED</span>') : '<span class="tag">-</span>';
         const intelTag = intel ? (intel.status === 'ok' ? '<span class="tag tag-cyan">OK</span>' : '<span class="tag tag-amber">DEGRADED</span>') : '<span class="tag">-</span>';
 
-        const statusTag = s.status === 'complete'
-          ? '<span class="tag tag-green">COMPLETE</span>'
-          : (s.status === 'partial' ? '<span class="tag tag-amber">PARTIAL</span>' : '<span class="tag tag-red">' + (s.status || 'ACTIVE') + '</span>');
+        const ext = rec?.data?.extensions || {};
+        const isVerified = ext.is_verified === true && ext.reconstruction_complete === true;
+        const isPartial = ext.reconstruction_status === 'incomplete' || (ext.recovery_state && ext.recovery_state.includes('PARTIAL'));
+        const statusTag = isVerified
+          ? '<span class="tag tag-green">COMPLETE &amp; VERIFIED</span>'
+          : (isPartial
+            ? '<span class="tag tag-amber">PARTIAL RECOVERY</span>'
+            : (s.status === 'complete' ? '<span class="tag tag-muted">PROCESSED</span>' : '<span class="tag tag-red">' + (s.status || 'ACTIVE') + '</span>'));
 
         const createdStr = s.created_utc ? s.created_utc.substring(0, 19).replace('T', ' ') + 'Z' : '-';
 
@@ -247,7 +259,14 @@ def new_analysis_page() -> str:
         <div id="synthetic-section">
           <label class="form-label" for="fixture_id">Select Test Fixture</label>
           <select id="fixture_id" name="fixture_id" class="form-select">
-            <option value="visible_text_blob">Visible Text Synthetic PDF Blob (blob_visible_text.bin &bull; 2,560 bytes &bull; 10 fragments &bull; Visible Content Test)</option>
+            <option value="105block_one_missing">TRACE 105-Block Erased Region (TRACE_105block_one_missing.bin &bull; 26,880 B &bull; 98 frags &bull; 8 Pages &bull; Missing Slot 53)</option>
+            <option value="visible_text_4missing">Damaged Synthetic Reference — 4 Fragments Missing (xref, trailer, startxref, EOF) (blob_visible_text_4missing.bin &bull; 1,536 B &bull; 6 frags &bull; Synthetic Repair Demo)</option>
+            <option value="visible_text_missing">Missing Fragments Synthetic Test (blob_visible_text_missing.bin &bull; 2,048 B &bull; 8 frags &bull; Synthetic Repair Demo)</option>
+            <option value="judge_scenario_a">Judge Scenario A: Complete Shuffled Recovery (judge_complete_shuffled.bin &bull; 2,560 B &bull; 10 frags &bull; COMPLETE AND VERIFIED)</option>
+            <option value="judge_scenario_b">Judge Scenario B: Missing Fragment Partial Recovery (judge_missing_fragment.bin &bull; 2,048 B &bull; 8 frags &bull; PARTIAL)</option>
+            <option value="judge_scenario_c">Judge Scenario C: Corrupted Fragment Detection (judge_corrupted_fragment.bin &bull; 2,560 B &bull; 10 frags &bull; CORRUPTED)</option>
+            <option value="scrambled_evidence_blob">Scrambled PDF Evidence (TRACE_Scrambled_Evidence.bin &bull; 1,792 bytes &bull; 7 fragments &bull; 'TRACE SCRAMBLED TEST FILE')</option>
+            <option value="visible_text_blob">Visible Text Synthetic PDF Blob (blob_visible_text.bin &bull; 2,560 bytes &bull; 10 fragments &bull; 'TRACE FORENSIC RECONSTRUCTION TEST')</option>
             <option value="synthetic_blob">Deterministic Synthetic PDF Blob (blob_1337.bin &bull; 2,048 bytes &bull; 8 fragments &bull; Blank Canvas)</option>
             <option value="bundle_minimal">M0 Contract Floor Bundle (bundle_minimal.json &bull; 2,127 bytes &bull; 0 fragments)</option>
             <option value="bundle_realistic">Realistic Multi-Fragment Bundle (bundle_realistic.json &bull; 25,709 bytes &bull; 5 fragments)</option>
@@ -260,8 +279,19 @@ def new_analysis_page() -> str:
         <!-- UPLOAD SECTION -->
         <div id="upload-section" style="display: none;">
           <label class="form-label" for="file_upload">Upload Media Bitstream</label>
-          <input type="file" id="file_upload" name="file" class="form-input" accept=".bin,.raw,.img,.dd,.json">
-          <div class="form-hint">Supported formats: Raw sector images (.bin, .raw, .img, .dd) or canonical JSON bundles (.json).</div>
+          <input type="file" id="file_upload" name="file" class="form-input" accept=".bin,.raw,.img,.dd,.json,.pdf">
+          <div class="form-hint" style="margin-bottom: 0.75rem;">Supported formats: Raw sector images (.bin, .raw, .img, .dd), intact documents (.pdf), or canonical JSON bundles (.json).</div>
+          
+          <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: 2px; padding: 0.85rem; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary);">
+            <div style="font-weight: 700; color: var(--accent-cyan); font-family: var(--font-mono); margin-bottom: 0.25rem;">
+              ENGINE SPECIFICATION &amp; RECONSTRUCTION CONSTRAINTS
+            </div>
+            <ul style="margin: 0 0 0 1.15rem; padding: 0;">
+              <li><strong>Intact PDF (.pdf):</strong> Complete, sequential PDF files are validated against ISO 32000-1 syntax rules and ingested directly with 100% original bitstream preservation (zero fragment fabrication).</li>
+              <li><strong>Scrambled Binary Evidence (.bin, .raw, .dd):</strong> Supported when evidence fragments are structure-aligned (e.g. 256-byte sector blocks) where structural markers (<code>%PDF-</code>, objects, xref tables, trailers, and <code>%%EOF</code>) provide deterministic graph edges for authentic assembly.</li>
+              <li><strong>Engine Limitation:</strong> Arbitrary fragmentation without structural alignment or with missing fragments cannot be mathematically solved without guessing. TRACE strictly refuses to fabricate missing bytes; unplaced fragments are flagged as <strong>INCOMPLETE</strong> and never marked as verified.</li>
+            </ul>
+          </div>
         </div>
       </div>
 
@@ -428,14 +458,28 @@ __SUBNAV__
             <div>CASE ID: <span id="case-id-val" style="color: var(--accent-copper); font-weight: 700;">&hellip;</span></div>
             <div>SESSION: <span id="session-id-val" style="color: var(--accent-cyan); font-weight: 700;">__SESSION_ID__</span></div>
             <div>INVESTIGATOR: <span id="investigator-val" style="color: var(--text-secondary);">&hellip;</span></div>
+            <div>EVIDENCE FILE: <span id="orig-file-val" style="color: var(--text-primary); font-weight: 600;">&hellip;</span></div>
+            <div>EVIDENCE SIZE: <span id="orig-size-val" style="color: var(--text-secondary);">&hellip;</span></div>
             <div>RECORDED: <span id="created-val" style="color: var(--text-secondary);">&hellip;</span></div>
           </div>
         </div>
 
         <div style="display: flex; gap: 0.5rem; align-items: center;" id="status-badges">
-          <span class="tag" id="status-tag">LOADING</span>
+          <span class="tag tag-muted" id="pipeline-status-tag">PIPELINE: PROCESSED</span>
+          <span class="tag" id="status-tag">RECOVERY: EVALUATING</span>
           <span class="tag" id="wb-tag">WRITE-BLOCK: &hellip;</span>
         </div>
+      </div>
+    </div>
+
+    <!-- ERROR & RETRY BANNER (Shown if any endpoint fails) -->
+    <div id="investigation-error-banner" style="display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 2px; padding: 0.85rem 1rem; margin-bottom: 1.5rem; font-size: 12.5px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
+        <div>
+          <strong style="color: var(--accent-red); font-family: var(--font-mono);">[INVESTIGATION ALERT]</strong>
+          <span id="investigation-error-text" style="color: var(--text-primary); margin-left: 0.5rem;">Failed to retrieve some forensic telemetry from the backend.</span>
+        </div>
+        <button type="button" onclick="loadOverview()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 0.35rem 0.75rem;">Retry Loading</button>
       </div>
     </div>
 
@@ -444,27 +488,40 @@ __SUBNAV__
       <!-- RECONSTRUCTED ARTIFACT CARD -->
       <div class="panel" style="margin-bottom: 0;">
         <div class="panel-header">
-          <span class="panel-title">[P1] Reconstructed Byte Artifact</span>
-          <span class="tag tag-green" id="recon-status-tag">ANALYSIS PENDING</span>
+          <span class="panel-title" id="artifact-card-title">[P1] Reconstructed Byte Artifact</span>
+          <span class="tag" id="recon-status-tag">LOADING</span>
         </div>
-        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 1.25rem;">
+        <p id="artifact-card-desc" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 1.25rem;">
           Authentic PDF byte reconstruction assembled from carved fragments without synthetic interpolation.
         </p>
 
+        <!-- INTACT DISTINCTION BANNER (rendered conditionally) -->
+        <div id="intact-distinction-banner" style="display: none; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 2px; padding: 0.85rem 1rem; margin-bottom: 1.25rem; font-size: 12.5px; line-height: 1.5;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;">
+            <span class="tag tag-green" style="font-size: 10px; font-weight: 700;">INTACT VERIFIED vs RECONSTRUCTED</span>
+          </div>
+          <div style="color: var(--text-primary);">
+            <strong>Intact Verification:</strong> This evidence file was positively identified and validated as a complete, sequential PDF. The original bitstream was preserved verbatim without block carving, sector slicing, or fragment reassembly.
+          </div>
+          <div style="color: var(--text-muted); font-size: 11.5px; margin-top: 0.35rem;">
+            <em>Forensic Distinction:</em> Reconstruction is reserved for raw or damaged disk images requiring block carving. Intact PDF files undergo strict structural validation and cryptographic hashing with zero fragment fabrication.
+          </div>
+        </div>
+
         <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: 2px; padding: 1rem; margin-bottom: 1.25rem; font-family: var(--font-mono); font-size: 11.5px;">
           <div style="margin-bottom: 0.5rem; display: flex; justify-content: space-between;">
-            <span style="color: var(--text-muted);">ARTIFACT SHA-256:</span>
+            <span style="color: var(--text-muted);" id="digest-label">ARTIFACT SHA-256:</span>
             <span class="tag tag-copper">IMMUTABLE</span>
           </div>
           <div id="recon-sha256" class="hash-cell" style="font-size: 11.5px; margin-bottom: 0.75rem;">Loading digest&hellip;</div>
-          <div style="display: flex; justify-content: space-between; color: var(--text-secondary); border-top: 1px solid var(--border-subtle); padding-top: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; color: var(--text-secondary); border-top: 1px solid var(--border-subtle); padding-top: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
             <span>SIZE: <strong id="recon-size" style="color: var(--text-primary);">&hellip;</strong></span>
             <span>FRAGMENTS: <strong id="recon-frags" style="color: var(--text-primary);">&hellip;</strong></span>
-            <span>BYTE COVERAGE: <strong style="color: var(--accent-green);">100% AUTHENTIC</strong></span>
+            <span id="coverage-span">BYTE COVERAGE: <strong id="coverage-val" style="color: var(--text-muted);">NOT VERIFIED</strong></span>
           </div>
           <div id="pdf-structure-box" style="margin-top: 0.75rem; border-top: 1px dashed var(--border-subtle); padding-top: 0.5rem; font-size: 11px; color: var(--text-muted); line-height: 1.5;">
             <span style="color: var(--accent-copper); font-weight: 600;">SPECIFICATION STATUS:</span>
-            <span id="recon-spec-status">Loading structural introspection&hellip;</span>
+            <span id="recon-spec-status">Loading structural inspection&hellip;</span>
           </div>
         </div>
 
@@ -475,7 +532,13 @@ __SUBNAV__
           <a href="/api/sessions/__SESSION_ID__/reconstruction/download" class="btn btn-primary" id="btn-download" download>
             &darr; Download Reconstructed PDF
           </a>
-          <a href="/investigations/__SESSION_ID__/provenance" class="btn btn-secondary">
+          <a href="/api/sessions/__SESSION_ID__/report.html" class="btn btn-secondary" target="_blank">
+            &darr; Forensic Report (HTML)
+          </a>
+          <a href="/api/sessions/__SESSION_ID__/report.json" class="btn btn-ghost" download>
+            &darr; Export JSON
+          </a>
+          <a href="/investigations/__SESSION_ID__/provenance" class="btn btn-secondary" id="btn-provenance">
             View Provenance Ledger &rarr;
           </a>
         </div>
@@ -491,10 +554,10 @@ __SUBNAV__
         <div style="display: flex; flex-direction: column; gap: 0.85rem;" id="stages-container">
           <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 0.85rem; border-radius: 2px;">
             <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11.5px; margin-bottom: 0.35rem;">
-              <span style="color: var(--accent-copper); font-weight: 700;">STAGE 1: P1 RECOVERY ENGINE</span>
-              <span class="tag tag-green">VERIFIED</span>
+              <span id="stage1-title" style="color: var(--accent-copper); font-weight: 700;">STAGE 1: P1 RECOVERY ENGINE</span>
+              <span class="tag tag-green" id="stage1-tag">VERIFIED</span>
             </div>
-            <div style="font-size: 12px; color: var(--text-secondary);">
+            <div id="stage1-desc" style="font-size: 12px; color: var(--text-secondary);">
               Deterministic block carving, PDF marker parsing, and authentic byte assembly.
             </div>
           </div>
@@ -518,6 +581,28 @@ __SUBNAV__
       </div>
     </div>
 
+    <!-- MULTI-FORMAT CARVED ARTIFACTS PANEL -->
+    <div class="panel" id="multi-artifacts-panel" style="display: none; margin-bottom: 1.5rem;">
+      <div class="panel-header">
+        <span class="panel-title">Multi-Format Carved Artifacts &amp; Filesystem Discoveries</span>
+        <span class="tag tag-cyan" id="artifacts-count-tag">0 ARTIFACTS</span>
+      </div>
+      <div id="multi-artifacts-container">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+
+    <!-- GEMINI AI INVESTIGATION BRIEF -->
+    <div class="panel" id="ai-panel" style="margin-bottom: 1.5rem;">
+      <div class="panel-header">
+        <span class="panel-title">[AI-Assisted] Forensic Analysis Brief &amp; Intelligence Summary</span>
+        <span class="tag tag-cyan" id="ai-model-tag">AI PENDING</span>
+      </div>
+      <div id="ai-container">
+        <p style="color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;">Querying intelligent AI analysis&hellip;</p>
+      </div>
+    </div>
+
     <!-- INTELLIGENCE REPORT FINDINGS -->
     <div class="panel">
       <div class="panel-header">
@@ -536,65 +621,509 @@ __SUBNAV__
 <script>
   const SESSION_ID = "__SESSION_ID__";
 
-  async function loadOverview() {
+  function escapeHtml(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function showError(msg) {
+    const banner = document.getElementById('investigation-error-banner');
+    const txt = document.getElementById('investigation-error-text');
+    if (banner && txt) {
+      banner.style.display = 'block';
+      txt.textContent = msg;
+    }
+  }
+
+  function hideError() {
+    const banner = document.getElementById('investigation-error-banner');
+    if (banner) banner.style.display = 'none';
+  }
+
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      // 1. Fetch Session Detail
-      const sRes = await fetch(`/api/sessions/${SESSION_ID}`);
-      if (!sRes.ok) throw new Error('Session not found');
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      return res;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        throw new Error(`Request timed out after ${timeoutMs / 1000}s`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  // 1. Session Detail Loader
+  async function loadSessionDetail() {
+    try {
+      const sRes = await fetchWithTimeout(`/api/sessions/${SESSION_ID}`, {}, 8000);
+      if (!sRes.ok) throw new Error(`HTTP ${sRes.status} fetching session detail`);
       const session = await sRes.json();
 
-      document.getElementById('case-title-display').textContent = session.case_title || 'Digital Evidence Examination';
-      document.getElementById('case-id-val').textContent = session.case_id || 'CASE-01';
-      document.getElementById('investigator-val').textContent = session.investigator || 'Unassigned Examiner';
-      document.getElementById('created-val').textContent = session.created_utc ? session.created_utc.substring(0, 19).replace('T', ' ') + 'Z' : '-';
+      const titleEl = document.getElementById('case-title-display');
+      if (titleEl) titleEl.textContent = session.case_title || 'Digital Evidence Examination';
+      const caseEl = document.getElementById('case-id-val');
+      if (caseEl) caseEl.textContent = session.case_id || 'CASE-01';
+      const invEl = document.getElementById('investigator-val');
+      if (invEl) invEl.textContent = session.investigator || 'Unassigned Examiner';
+      const createdEl = document.getElementById('created-val');
+      if (createdEl) createdEl.textContent = session.submitted_at ? session.submitted_at.substring(0, 19).replace('T', ' ') + 'Z' : '-';
 
-      const sTag = document.getElementById('status-tag');
-      sTag.textContent = (session.status || 'ACTIVE').toUpperCase();
-      sTag.className = 'tag ' + (session.status === 'complete' ? 'tag-green' : 'tag-amber');
+      if (session.evidence_bytes != null) {
+        const origSizeEl = document.getElementById('orig-size-val');
+        if (origSizeEl) origSizeEl.textContent = `${Number(session.evidence_bytes).toLocaleString()} bytes`;
+      }
 
-      // 2. Fetch Evidence Bundle to check write-block and counts
-      const evRes = await fetch(`/api/sessions/${SESSION_ID}/evidence`);
+      const pipeTag = document.getElementById('pipeline-status-tag');
+      if (pipeTag) {
+        if (session.status === 'complete') {
+          pipeTag.textContent = 'PIPELINE: PROCESSED';
+          pipeTag.className = 'tag tag-muted';
+        } else if (session.status === 'failed') {
+          pipeTag.textContent = 'PIPELINE: FAILED';
+          pipeTag.className = 'tag tag-red';
+        } else {
+          pipeTag.textContent = 'PIPELINE: ' + (session.status || 'ACTIVE').toUpperCase();
+          pipeTag.className = 'tag tag-amber';
+        }
+      }
+    } catch (err) {
+      console.error('Session detail error:', err);
+      showError(`Session detail error: ${err.message}`);
+    }
+  }
+
+  // 2. Evidence Bundle Metadata Loader
+  async function loadEvidenceBundle() {
+    try {
+      const evRes = await fetchWithTimeout(`/api/sessions/${SESSION_ID}/evidence`, {}, 8000);
       if (evRes.ok) {
         const bundle = await evRes.json();
         const media = bundle.acquisition?.media?.[0] || {};
         const wbTag = document.getElementById('wb-tag');
-        if (media.write_blocked) {
-          wbTag.textContent = 'WRITE-BLOCK: ATTESTED';
-          wbTag.className = 'tag tag-green';
-        } else {
-          wbTag.textContent = 'WRITE-BLOCK: UNVERIFIED (A13)';
-          wbTag.className = 'tag tag-amber';
+        if (wbTag) {
+          if (media.write_blocked) {
+            wbTag.textContent = 'WRITE-BLOCK: ATTESTED';
+            wbTag.className = 'tag tag-green';
+          } else {
+            wbTag.textContent = 'WRITE-BLOCK: UNVERIFIED (A13)';
+            wbTag.className = 'tag tag-amber';
+          }
+        }
+        const origFileEl = document.getElementById('orig-file-val');
+        if (origFileEl && (media.source_ref || media.file_name)) {
+          origFileEl.textContent = media.source_ref || media.file_name;
+        }
+        const origSizeEl = document.getElementById('orig-size-val');
+        if (origSizeEl && media.size_bytes != null) {
+          origSizeEl.textContent = `${Number(media.size_bytes).toLocaleString()} bytes`;
+        }
+      }
+    } catch (err) {
+      console.warn('Evidence bundle metadata fetch warning:', err);
+    }
+  }
+
+  // 3. Reconstruction Metadata Loader
+  async function loadReconstructionMetadata() {
+    const stTag = document.getElementById('recon-status-tag');
+    const cardTitle = document.getElementById('artifact-card-title');
+    const cardDesc = document.getElementById('artifact-card-desc');
+    const intactBanner = document.getElementById('intact-distinction-banner');
+    const dlBtn = document.getElementById('btn-download');
+    const viewBtn = document.getElementById('btn-view-inline');
+    const provBtn = document.getElementById('btn-provenance');
+    const s1Title = document.getElementById('stage1-title');
+    const s1Tag = document.getElementById('stage1-tag');
+    const s1Desc = document.getElementById('stage1-desc');
+    const digestLabel = document.getElementById('digest-label');
+    const coverageVal = document.getElementById('coverage-val');
+    const specEl = document.getElementById('recon-spec-status');
+    const shaEl = document.getElementById('recon-sha256');
+    const sizeEl = document.getElementById('recon-size');
+    const fragsEl = document.getElementById('recon-frags');
+
+    // Explicit LOADING state
+    if (stTag) { stTag.textContent = 'LOADING'; stTag.className = 'tag'; }
+    if (shaEl) shaEl.textContent = 'Computing SHA-256 digest...';
+    if (specEl) specEl.textContent = 'Performing structural inspection...';
+
+    try {
+      const recRes = await fetchWithTimeout(`/api/sessions/${SESSION_ID}/reconstruction`, {}, 8000);
+      if (!recRes.ok) {
+        throw new Error(`HTTP ${recRes.status} retrieving reconstruction telemetry`);
+      }
+      const recon = await recRes.json();
+
+      // Update evidence filename/size from recon if not yet set
+      if (recon.media_source) {
+        const origFileEl = document.getElementById('orig-file-val');
+        if (origFileEl && (origFileEl.textContent === '…' || origFileEl.textContent === '...')) {
+          origFileEl.textContent = recon.media_source;
+        }
+      }
+      if (recon.media_size_bytes != null) {
+        const origSizeEl = document.getElementById('orig-size-val');
+        if (origSizeEl && (origSizeEl.textContent === '…' || origSizeEl.textContent === '...')) {
+          origSizeEl.textContent = `${Number(recon.media_size_bytes).toLocaleString()} bytes`;
         }
       }
 
-      // 3. Fetch Reconstruction Metadata
-      const recRes = await fetch(`/api/sessions/${SESSION_ID}/reconstruction`);
-      if (recRes.ok) {
-        const recon = await recRes.json();
-        document.getElementById('recon-sha256').textContent = recon.reconstructed_sha256 || 'N/A';
-        document.getElementById('recon-size').textContent = (recon.pdf_size_bytes || 2048) + ' bytes';
-        document.getElementById('recon-frags').textContent = (recon.fragments_carved || recon.fragments_placed || 8) + ' fragments';
-        const stTag = document.getElementById('recon-status-tag');
-        stTag.textContent = (recon.status || 'complete').toUpperCase();
-        stTag.className = 'tag ' + (recon.complete ? 'tag-green' : 'tag-copper');
-
-        const specEl = document.getElementById('recon-spec-status');
-        if (specEl) {
-          if (recon.pdf_structure) {
-            const ps = recon.pdf_structure;
-            specEl.innerHTML = `<strong>${ps.specification_status}</strong> &bull; MediaBox: [${(ps.mediabox || [0,0,200,200]).join(' ')}] &bull; Objects: ${ps.object_count}`;
+      if (recon.write_blocked !== undefined) {
+        const wbTag = document.getElementById('wb-tag');
+        if (wbTag) {
+          if (recon.write_blocked) {
+            wbTag.textContent = 'WRITE-BLOCK: ATTESTED';
+            wbTag.className = 'tag tag-green';
           } else {
-            specEl.textContent = 'ISO 32000-1 compliant byte stream verified.';
+            wbTag.textContent = 'WRITE-BLOCK: UNVERIFIED (A13)';
+            wbTag.className = 'tag tag-amber';
           }
         }
       }
 
-      // 4. Fetch Intelligence Report
-      const repRes = await fetch(`/api/sessions/${SESSION_ID}/report`);
-      const findingsEl = document.getElementById('findings-container');
+      const artifactDigest = recon.reconstructed_sha256 || recon.partial_sha256 || 'UNAVAILABLE';
+      if (shaEl) shaEl.textContent = artifactDigest;
+      if (sizeEl) sizeEl.textContent = recon.pdf_size_bytes != null ? `${Number(recon.pdf_size_bytes).toLocaleString()} bytes` : '0 bytes';
+
+      if (recon.is_intact_passthrough) {
+        if (stTag) { stTag.textContent = 'INTACT VERIFIED'; stTag.className = 'tag tag-green'; }
+        if (cardTitle) cardTitle.textContent = '[PASSTHROUGH] Intact Document Verification';
+        if (cardDesc) cardDesc.textContent = 'Original document bitstream validated as an intact, complete PDF. Exact original bytes preserved without block carving, sector slicing, or fragment reconstruction.';
+        if (intactBanner) intactBanner.style.display = 'block';
+        if (dlBtn) {
+          dlBtn.innerHTML = '&darr; Download Verified Original PDF';
+          dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
+          dlBtn.style.opacity = '1';
+          dlBtn.style.cursor = 'pointer';
+        }
+        if (viewBtn) {
+          viewBtn.style.display = 'inline-flex';
+          viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
+        }
+        if (provBtn) provBtn.textContent = 'View Bitstream Ledger \u2192';
+        if (digestLabel) digestLabel.textContent = 'ORIGINAL BITSTREAM SHA-256:';
+        if (coverageVal) {
+          coverageVal.textContent = '100% (INTACT STREAM)';
+          coverageVal.style.color = 'var(--accent-green)';
+        }
+        if (fragsEl) fragsEl.textContent = '0 (Intact Stream Passthrough)';
+        if (s1Title) s1Title.textContent = 'STAGE 1: INTACT BITSTREAM VALIDATION';
+        if (s1Tag) { s1Tag.textContent = 'PASSTHROUGH VERIFIED'; s1Tag.className = 'tag tag-green'; }
+        if (s1Desc) s1Desc.textContent = 'Direct ISO 32000-1 syntax validation. Preserved original byte stream without block carving or fragment assembly.';
+        if (specEl) {
+          specEl.innerHTML = '<strong>ISO 32000-1 STRUCTURALLY VALID:</strong> Complete, unfragmented PDF bitstream ingested directly. Exact source bytes preserved.';
+        }
+      } else if (recon.complete && (recon.status === 'structurally_valid' || recon.is_verified)) {
+        if (stTag) { stTag.textContent = 'STRUCTURALLY VALID'; stTag.className = 'tag tag-green'; }
+        if (cardTitle) cardTitle.textContent = '[P1] Reconstructed Byte Artifact';
+        if (cardDesc) cardDesc.textContent = 'Authentic PDF byte reconstruction assembled deterministically from carved fragments without synthetic interpolation.';
+        if (intactBanner) intactBanner.style.display = 'none';
+        if (dlBtn) {
+          dlBtn.innerHTML = '&darr; Download Reconstructed PDF';
+          dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
+          dlBtn.style.opacity = '1';
+          dlBtn.style.cursor = 'pointer';
+        }
+        if (viewBtn) {
+          viewBtn.style.display = 'inline-flex';
+          viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
+        }
+        if (provBtn) provBtn.textContent = 'View Provenance Ledger \u2192';
+        if (digestLabel) digestLabel.textContent = 'RECONSTRUCTED ARTIFACT SHA-256:';
+        if (coverageVal) {
+          coverageVal.textContent = '100% COVERAGE (RECONSTRUCTED)';
+          coverageVal.style.color = 'var(--accent-green)';
+        }
+        if (fragsEl) fragsEl.textContent = `${recon.fragments_placed || 0} / ${recon.fragments_carved || 0} placed`;
+        if (s1Tag) { s1Tag.textContent = 'VERIFIED'; s1Tag.className = 'tag tag-green'; }
+        if (s1Desc) s1Desc.textContent = 'Deterministic block carving, PDF marker parsing, and authentic byte assembly completed.';
+        if (specEl) {
+          if (recon.pdf_structure) {
+            const ps = recon.pdf_structure;
+            specEl.innerHTML = `<strong>${escapeHtml(ps.specification_status || 'STRUCTURALLY VALID')}</strong> &bull; MediaBox: [${(ps.mediabox || [0,0,612,792]).join(' ')}] &bull; Objects: ${ps.object_count || 'N/A'}`;
+          } else {
+            specEl.textContent = 'ISO 32000-1 compliant byte stream verified.';
+          }
+        }
+      } else if (recon.status === 'incomplete' || !recon.complete) {
+        const unplaced = recon.unplaced_fragments_count || 0;
+        const placed = recon.fragments_placed || 0;
+        const carved = recon.fragments_carved || 0;
+
+        if (stTag) {
+          stTag.textContent = placed > 0 ? `PARTIAL (${unplaced} UNPLACED)` : 'INCOMPLETE (0 PLACED)';
+          stTag.className = placed > 0 ? 'tag tag-amber' : 'tag tag-red';
+        }
+        if (cardTitle) cardTitle.textContent = '[P1] Incomplete Fragment Reconstruction';
+        if (cardDesc) cardDesc.textContent = `Partial assembly: ${unplaced} fragment(s) remain unplaced. Reconstruction halted to prevent unverified fabrication. Output is partial and unverified.`;
+        if (intactBanner) intactBanner.style.display = 'none';
+        if (digestLabel) digestLabel.textContent = placed > 0 ? 'PARTIAL RECONSTRUCTION SHA-256:' : 'ARTIFACT SHA-256 (UNAVAILABLE):';
+
+        if (coverageVal) {
+          if (placed === 0) {
+            coverageVal.textContent = '0% (NO VALID CHAINS)';
+            coverageVal.style.color = 'var(--accent-red)';
+          } else {
+            const pct = carved > 0 ? Math.round((placed / carved) * 100) : 0;
+            coverageVal.textContent = `${pct}% (PARTIAL / UNVERIFIED)`;
+            coverageVal.style.color = 'var(--accent-amber)';
+          }
+        }
+
+        if (dlBtn) {
+          if (placed === 0) {
+            dlBtn.innerHTML = '&#9888; Reconstruction Halted (0 Placed)';
+            dlBtn.className = 'btn btn-secondary';
+            dlBtn.removeAttribute('href');
+            dlBtn.style.cursor = 'not-allowed';
+            dlBtn.style.opacity = '0.6';
+            if (viewBtn) viewBtn.style.display = 'none';
+          } else {
+            dlBtn.innerHTML = '&darr; Download Partial PDF (Unverified)';
+            dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download`);
+            dlBtn.style.opacity = '1';
+            dlBtn.style.cursor = 'pointer';
+            if (viewBtn) {
+              viewBtn.style.display = 'inline-flex';
+              viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view`);
+            }
+          }
+        }
+
+        if (fragsEl) fragsEl.textContent = `${placed} / ${carved} placed (${unplaced} unplaced)`;
+
+        if (s1Tag) {
+          s1Tag.textContent = placed > 0 ? 'PARTIAL' : 'FAILED';
+          s1Tag.className = placed > 0 ? 'tag tag-amber' : 'tag tag-red';
+        }
+        if (s1Desc) {
+          if (placed === 0) {
+            s1Desc.textContent = 'Reconstruction halted: No valid PDF header (%PDF-) or traversable chains detected in input media.';
+          } else {
+            s1Desc.textContent = `Reconstruction halted: ${unplaced} unplaced fragment(s). Authentic ordering could not be mathematically guaranteed.`;
+          }
+        }
+
+        if (specEl) {
+          let extraNotice = '';
+          if (recon.missing_elements && recon.missing_elements.length > 0) {
+            extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-amber);"><strong>Missing Structural Elements:</strong> ${recon.missing_elements.map(e => `&bull; ${escapeHtml(e)}`).join(' ')}</div>`;
+          }
+          if (recon.corrupted_fragment_ids && recon.corrupted_fragment_ids.length > 0) {
+            extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-red);"><strong>Detected Integrity Corruption:</strong> Frag IDs: ${recon.corrupted_fragment_ids.join(', ')}</div>`;
+          }
+          if (placed === 0) {
+            specEl.innerHTML = '<span style="color: var(--accent-red);"><strong>UNRECOGNIZED INPUT:</strong> No valid PDF header or structural markers detected in media.</span>' + extraNotice;
+          } else {
+            specEl.innerHTML = `<span style="color: var(--accent-amber);"><strong>RECONSTRUCTION PARTIAL:</strong> ${unplaced} fragment(s) remain unplaced. Structural integrity unverified.</span>` + extraNotice;
+          }
+        }
+      }
+
+      const topCaseTag = document.getElementById('status-tag');
+      if (topCaseTag) {
+        if (recon.is_intact_passthrough) {
+          topCaseTag.textContent = 'INTACT VERIFIED';
+          topCaseTag.className = 'tag tag-green';
+          topCaseTag.style = '';
+        } else if (recon.complete && recon.is_verified) {
+          topCaseTag.textContent = 'RECOVERY: 100% VERIFIED';
+          topCaseTag.className = 'tag tag-green';
+          topCaseTag.style = '';
+        } else if (recon.has_repaired_file && recon.repaired_is_openable) {
+          topCaseTag.textContent = 'SYNTHETIC REPAIR (DEMO)';
+          topCaseTag.className = 'tag';
+          topCaseTag.style.background = 'rgba(168, 85, 247, 0.2)';
+          topCaseTag.style.color = '#e9d5ff';
+          topCaseTag.style.border = '1px solid rgba(168, 85, 247, 0.5)';
+        } else if (recon.status === 'incomplete' || (recon.recovery_state && recon.recovery_state.includes('PARTIAL')) || (recon.unplaced_fragments_count > 0)) {
+          const unplaced = recon.unplaced_fragments_count || 0;
+          topCaseTag.textContent = unplaced > 0 ? `PARTIAL RECOVERY (${unplaced} UNPLACED)` : 'PARTIAL RECOVERY';
+          topCaseTag.className = 'tag tag-amber';
+          topCaseTag.style = '';
+        } else if (recon.status === 'corrupted' || (recon.recovery_state && recon.recovery_state.includes('CORRUPTED'))) {
+          topCaseTag.textContent = 'RECOVERY: CORRUPTED';
+          topCaseTag.className = 'tag tag-red';
+          topCaseTag.style = '';
+        } else {
+          topCaseTag.textContent = 'RECOVERY: UNVERIFIED';
+          topCaseTag.className = 'tag tag-copper';
+          topCaseTag.style = '';
+        }
+      }
+
+      if (recon.recovery_state && stTag) {
+        stTag.textContent = recon.recovery_state.toUpperCase();
+        if (recon.recovery_state.includes('ORIGINAL BYTES RECOVERED AND VERIFIED') || recon.recovery_state === 'COMPLETE AND VERIFIED') {
+          stTag.className = 'tag tag-green';
+          stTag.style = '';
+        } else if (recon.recovery_state.includes('SYNTHETICALLY REPAIRED') || recon.recovery_state.includes('SYNTHETIC REPAIR')) {
+          stTag.className = 'tag';
+          stTag.style.background = 'rgba(168, 85, 247, 0.2)';
+          stTag.style.color = '#e9d5ff';
+          stTag.style.border = '1px solid rgba(168, 85, 247, 0.5)';
+        } else if (recon.recovery_state.includes('PARTIAL')) {
+          stTag.className = 'tag tag-amber';
+          stTag.style = '';
+        } else if (recon.recovery_state.includes('INVALID') || recon.recovery_state === 'CORRUPTED') {
+          stTag.className = 'tag tag-red';
+          stTag.style = '';
+        } else {
+          stTag.className = 'tag tag-copper';
+          stTag.style = '';
+        }
+      }
+
+      // If synthetic repair produced an openable PDF, provide prominent access and honest provenance
+      if (recon.has_repaired_file && !recon.complete) {
+        if (dlBtn) {
+          dlBtn.innerHTML = '&darr; Download Repaired PDF (Demo)';
+          dlBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired`);
+          dlBtn.className = 'btn btn-primary';
+          dlBtn.style.opacity = '1';
+          dlBtn.style.cursor = 'pointer';
+          dlBtn.style.background = '#9333ea';
+          dlBtn.style.borderColor = '#a855f7';
+        }
+        if (viewBtn) {
+          viewBtn.style.display = 'inline-flex';
+          viewBtn.innerHTML = '&#128065; View Repaired PDF (Demo)';
+          viewBtn.setAttribute('href', `/api/sessions/${SESSION_ID}/reconstruction/view?mode=repaired`);
+        }
+        if (specEl) {
+          const txt = recon.repaired_extracted_text ? ` &bull; Verified Text: "${escapeHtml(recon.repaired_extracted_text)}"` : '';
+          specEl.innerHTML = `
+            <div style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 3px; padding: 0.85rem; margin-top: 0.5rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; flex-wrap: wrap; gap: 0.5rem;">
+                <span class="tag" style="background: rgba(168, 85, 247, 0.25); color: #f3e8ff; border: 1px solid rgba(168, 85, 247, 0.6); font-weight: 700;">
+                  SYNTHETIC REPAIR (DEMO)
+                </span>
+                <span style="font-family: var(--font-mono); font-size: 11px; color: #d8b4fe;">
+                  ${recon.repaired_pdf_size || 'N/A'} bytes &bull; ${recon.repaired_page_count || 1} page${txt}
+                </span>
+              </div>
+              <div style="font-weight: 700; color: #f3e8ff; font-family: var(--font-mono); font-size: 12px; margin-bottom: 0.35rem;">
+                SYNTHETICALLY REPAIRED — NOT BYTE-IDENTICAL TO ORIGINAL
+              </div>
+              <div style="font-size: 11.5px; color: var(--text-secondary); line-height: 1.5;">
+                Original recovered objects preserved without alteration. Rebuilt cross-reference table (xref), trailer dictionary, startxref pointer, and %%EOF terminator to allow document rendering in Adobe Acrobat and standard readers.<br>
+                <span style="color: var(--text-muted); font-size: 11px;">[Forensic Ledger] Recovered evidence: ${recon.fragments_placed || 0} fragments (${recon.pdf_size_bytes} B) &bull; Synthesized syntax: ${recon.synthesized_bytes_count || 0} B &bull; Byte-identical to ground truth: FALSE &bull; Authenticity claimed: NONE for generated bytes.</span>
+              </div>
+              <div style="margin-top: 0.65rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=repaired" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 0.35rem 0.75rem; background: #9333ea; border-color: #a855f7;">&darr; Download Repaired PDF (Demo)</a>
+                <a href="/api/sessions/${SESSION_ID}/reconstruction/download?mode=raw" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 0.35rem 0.75rem;">&darr; Download Raw Partial Bytes (${recon.pdf_size_bytes} B)</a>
+              </div>
+            </div>
+          `;
+        }
+      } else if (!recon.complete && (!recon.has_repaired_file || !recon.repaired_is_openable)) {
+        if (specEl) {
+          let extraNotice = '';
+          if (recon.missing_elements && recon.missing_elements.length > 0) {
+            extraNotice += `<div style="margin-top:0.4rem; font-size:11.5px; color:var(--accent-amber);"><strong>Missing Structural Elements:</strong> ${recon.missing_elements.map(e => `&bull; ${escapeHtml(e)}`).join(' ')}</div>`;
+          }
+          const unplaced = recon.unplaced_fragments_count || 0;
+          specEl.innerHTML = `
+            <div style="margin-bottom: 0.5rem;">
+              <span style="color: var(--accent-amber);"><strong>RECONSTRUCTION PARTIAL:</strong> ${unplaced} fragment(s) unplaced. Missing structural trailer/pointers prevent opening.</span>
+              ${extraNotice}
+            </div>
+            <div style="background: rgba(168, 85, 247, 0.08); border: 1px dashed rgba(168, 85, 247, 0.4); border-radius: 3px; padding: 0.75rem; margin-top: 0.5rem;">
+              <div style="font-size: 12px; color: #e9d5ff; margin-bottom: 0.4rem;">
+                <strong>Synthetic Repair (Demo) Action Available:</strong><br>
+                Repair the PDF structure using PDF parser reconstruction to rebuild the cross-reference table, trailer, startxref, and EOF.
+              </div>
+              <button type="button" onclick="triggerSyntheticRepair()" class="btn btn-primary btn-sm" id="btn-trigger-repair" style="font-size: 11.5px; padding: 0.35rem 0.85rem; background: #9333ea; border-color: #a855f7;">
+                &#9874; Run Synthetic Repair (Demo)
+              </button>
+            </div>
+          `;
+        }
+      }
+
+      // Render multi-format carved artifacts table if available
+      if (recon.artifacts && recon.artifacts.length > 0) {
+        const artPanel = document.getElementById('multi-artifacts-panel');
+        const artCont = document.getElementById('multi-artifacts-container');
+        const artCountTag = document.getElementById('artifacts-count-tag');
+        if (artPanel && artCont) {
+          artPanel.style.display = 'block';
+          if (artCountTag) artCountTag.textContent = `${recon.artifacts.length} ARTIFACTS`;
+          artCont.innerHTML = `
+            <table style="width:100%; border-collapse:collapse; margin-top:0.5rem; font-size:12px;">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-family:var(--font-mono); text-align:left;">
+                  <th style="padding:6px;">ID</th>
+                  <th style="padding:6px;">FILE</th>
+                  <th style="padding:6px;">FORMAT</th>
+                  <th style="padding:6px;">SIZE</th>
+                  <th style="padding:6px;">AUTHENTIC RECOVERY</th>
+                  <th style="padding:6px;">STATUS</th>
+                  <th style="padding:6px;">INTEGRITY</th>
+                  <th style="padding:6px;">STRUCTURAL REPAIR</th>
+                  <th style="padding:6px;">ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${recon.artifacts.map(a => `
+                  <tr style="border-bottom:1px solid var(--border-subtle);">
+                    <td style="padding:6px; font-family:var(--font-mono); font-size:11px;">${escapeHtml(a.artifact_id)}</td>
+                    <td style="padding:6px; font-weight:600;">${escapeHtml(a.filename)}</td>
+                    <td style="padding:6px;">
+                      <span class="tag tag-cyan" style="font-size:10px;">${escapeHtml((a.format_name || '').toUpperCase())}</span>
+                      ${a.format_confidence != null ? `<span style="font-size:10px; color:var(--text-muted); margin-left:3px;">(${Math.round(a.format_confidence)}%)</span>` : ''}
+                    </td>
+                    <td style="padding:6px; font-family:var(--font-mono);">${(a.size_bytes || 0).toLocaleString()} B</td>
+                    <td style="padding:6px; font-family:var(--font-mono); font-weight:700; color: ${a.authentic_recovery_pct != null ? (a.authentic_recovery_pct >= 99.9 ? '#10b981' : (a.authentic_recovery_pct > 0 ? '#f59e0b' : '#ef4444')) : 'var(--text-muted)'};">
+                      ${a.authentic_recovery_pct != null ? `${a.authentic_recovery_pct.toFixed(1)}%` : 'Unknown'}
+                    </td>
+                    <td style="padding:6px;"><span class="tag ${a.completeness === 'COMPLETE' || a.category === 'VERIFIED' ? 'tag-green' : (a.completeness === 'PARTIAL' || a.category === 'PARTIAL' ? 'tag-amber' : 'tag-red')}" style="font-size:10px;">${escapeHtml(a.completeness || a.category || 'UNKNOWN')}</span></td>
+                    <td style="padding:6px;"><span class="tag ${a.integrity_status === 'VERIFIED' ? 'tag-green' : (a.integrity_status === 'UNVERIFIED' ? 'tag-amber' : 'tag-red')}" style="font-size:10px;">${escapeHtml(a.integrity_status || 'UNVERIFIED')}</span></td>
+                    <td style="padding:6px;"><span class="tag" style="font-size:10px; ${a.structural_repair && a.structural_repair.includes('SYNTHETIC') ? 'background:rgba(168,85,247,0.2); color:#e9d5ff; border:1px solid rgba(168,85,247,0.5);' : (a.structural_repair && a.structural_repair.includes('NONE') ? 'background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.4);' : 'background:rgba(239,68,68,0.15); color:#ef4444; border:1px solid rgba(239,68,68,0.4);')}">${escapeHtml(a.structural_repair || 'NONE')}</span></td>
+                    <td style="padding:6px;"><a href="/api/sessions/${SESSION_ID}/artifacts/${a.artifact_id}/download" class="btn btn-ghost btn-sm" download>&darr; Download</a></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        }
+      }
+    } catch (err) {
+      console.error('Reconstruction metadata error:', err);
+      if (stTag) { stTag.textContent = 'FAILED'; stTag.className = 'tag tag-red'; }
+      if (shaEl) shaEl.textContent = 'UNAVAILABLE';
+      if (sizeEl) sizeEl.textContent = 'N/A';
+      if (fragsEl) fragsEl.textContent = 'N/A';
+      if (coverageVal) { coverageVal.textContent = 'NOT VERIFIED'; coverageVal.style.color = 'var(--text-muted)'; }
+      if (specEl) {
+        specEl.innerHTML = `
+          <div style="color: var(--accent-red); margin-bottom: 0.35rem;">
+            <strong>Structural Inspection Failed:</strong> ${escapeHtml(err.message)}
+          </div>
+          <button type="button" onclick="loadReconstructionMetadata()" class="btn btn-secondary btn-sm" style="font-size:11px; padding:3px 10px;">
+            &#8635; Retry Structural Inspection
+          </button>
+        `;
+      }
+      if (dlBtn) { dlBtn.style.opacity = '0.5'; dlBtn.removeAttribute('href'); dlBtn.style.cursor = 'not-allowed'; }
+      if (viewBtn) viewBtn.style.display = 'none';
+      showError(`Reconstruction error: ${err.message}`);
+    }
+  }
+
+  // 4. Intelligence Report Findings Loader
+  async function loadIntelligenceReport() {
+    const findingsEl = document.getElementById('findings-container');
+    const repTag = document.getElementById('report-id-tag');
+
+    try {
+      const repRes = await fetchWithTimeout(`/api/sessions/${SESSION_ID}/report`, {}, 8000);
       if (repRes.ok) {
         const rep = await repRes.json();
-        document.getElementById('report-id-tag').textContent = rep.report_id || 'RPT-ANALYSIS';
+        if (repTag) repTag.textContent = rep.report_id || 'RPT-ANALYSIS';
         const summary = rep.summary || 'Forensic analysis completed.';
         const warnings = rep.warnings || [];
 
@@ -604,28 +1133,192 @@ __SUBNAV__
             <div style="margin-top: 1rem;">
               <strong style="font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-amber);">Advisory Warnings (${warnings.length}):</strong>
               <div style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
-                ${warnings.map(w => `<div class="notice notice-warning" style="margin-bottom: 0;"><strong>[${w.code || 'WARN'}]</strong> ${w.message || w.detail || ''}</div>`).join('')}
+                ${warnings.map(w => {
+                  if (w.code === 'outputs_hash_unavailable') {
+                    return `
+                      <div class="notice notice-warning" style="margin-bottom: 0;">
+                        <div><strong>[outputs_hash_unavailable]</strong> ${escapeHtml(w.message || '')}</div>
+                        <div style="margin-top: 0.35rem; font-size: 11.5px; color: var(--text-secondary); line-height: 1.45; border-top: 1px dashed rgba(217, 119, 6, 0.3); padding-top: 0.35rem;">
+                          <strong>Contract Integrity Note:</strong> The M0 frozen contract specifies that <code>audit.outputs_hash</code> is computed over the finalized intelligence report body. Because the report schema remains an unfrozen boundary in M0, fabricating an arbitrary hash would violate cryptographic provenance. P3 intentionally withholds this field and emits this standard contract warning to guarantee evidentiary honesty.
+                        </div>
+                      </div>
+                    `;
+                  }
+                  return `<div class="notice notice-warning" style="margin-bottom: 0;"><strong>[${escapeHtml(w.code || 'WARN')}]</strong> ${escapeHtml(w.message || w.detail || '')}</div>`;
+                }).join('')}
               </div>
             </div>
           `;
         }
 
-        findingsEl.innerHTML = `
-          <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.6; margin-bottom: 0.5rem;">
-            ${summary}
-          </div>
-          ${warnHtml}
-        `;
+        if (findingsEl) {
+          findingsEl.innerHTML = `
+            <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.6; margin-bottom: 0.5rem;">
+              ${escapeHtml(summary)}
+            </div>
+            ${warnHtml}
+          `;
+        }
       } else {
-        findingsEl.innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">No intelligence report emitted for this session.</p>';
+        if (findingsEl) {
+          findingsEl.innerHTML = '<p style="color: var(--text-muted); font-size: 12px;">No intelligence report emitted for this session.</p>';
+        }
       }
     } catch (err) {
-      console.error(err);
-      alert('Error loading investigation: ' + err.message);
+      console.warn('Report fetch warning:', err);
+      if (findingsEl) {
+        findingsEl.innerHTML = `
+          <div style="color: var(--text-muted); font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <span>Report findings unavailable: ${escapeHtml(err.message)}</span>
+            <button type="button" onclick="loadIntelligenceReport()" class="btn btn-secondary btn-sm" style="font-size:11px; padding:2px 8px;">&#8635; Retry</button>
+          </div>
+        `;
+      }
     }
   }
 
-  window.addEventListener('DOMContentLoaded', loadOverview);
+  // 5. Gemini AI Analysis Loader
+  async function loadAiAnalysis() {
+    const aiCont = document.getElementById('ai-container');
+    const aiTag = document.getElementById('ai-model-tag');
+
+    // Explicit LOADING state
+    if (aiTag) { aiTag.textContent = 'ANALYZING...'; aiTag.className = 'tag tag-cyan'; }
+    if (aiCont) {
+      aiCont.innerHTML = '<p style="color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;">Querying intelligent AI analysis&hellip;</p>';
+    }
+
+    try {
+      const aiRes = await fetchWithTimeout(`/api/sessions/${SESSION_ID}/ai-analysis`, {}, 10000);
+      const ai = await aiRes.json().catch(() => ({}));
+
+      // Check if provider is unconfigured or unavailable
+      if (!aiRes.ok || ai.configured === false || ai.status === 'unavailable' || ai.message === 'AI analysis unavailable — configure provider') {
+        if (aiTag) {
+          aiTag.textContent = 'UNCONFIGURED';
+          aiTag.className = 'tag tag-amber';
+        }
+        if (aiCont) {
+          aiCont.innerHTML = `
+            <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 0.85rem; border-radius: 2px; font-size: 12.5px; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <strong style="color: var(--accent-amber);">AI analysis unavailable — configure provider</strong><br>
+                <span style="font-size: 11.5px; color: var(--text-muted);">Set <code>GEMINI_API_KEY</code> in environment to enable intelligent AI forensic briefs. Deterministic carving, graph assembly, and P2 contract validation operate with 100% integrity offline.</span>
+              </div>
+              <button type="button" onclick="loadAiAnalysis()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px;">
+                &#8635; Retry
+              </button>
+            </div>
+          `;
+        }
+        return;
+      }
+
+      if (ai.success && ai.explanation) {
+        if (aiTag) {
+          aiTag.textContent = (ai.model_used || 'GEMINI').toUpperCase();
+          aiTag.className = 'tag tag-green';
+        }
+        if (aiCont) {
+          const exp = ai.explanation;
+          aiCont.innerHTML = `
+            <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 1rem; border-radius: 2px; font-size: 13px;">
+              <p style="margin: 0 0 0.65rem 0;"><strong>Executive Summary:</strong> ${escapeHtml(exp.executive_summary || 'N/A')}</p>
+              <p style="margin: 0 0 0.65rem 0;"><strong>Artifacts Assessment:</strong> ${escapeHtml(exp.recovered_artifacts_overview || 'N/A')}</p>
+              <p style="margin: 0 0 0.65rem 0;"><strong>Missing Data:</strong> ${escapeHtml(exp.missing_data_assessment || 'N/A')}</p>
+              <p style="margin: 0 0 0.65rem 0; color: var(--accent-copper);"><strong>Evidentiary Statement:</strong> ${escapeHtml(exp.evidentiary_integrity_statement || 'N/A')}</p>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 0.75rem; border-top: 1px solid var(--border-subtle); padding-top: 0.5rem; display: flex; justify-content: space-between;">
+                <span>Latency: ${ai.latency_ms || 0} ms | Model: ${escapeHtml(ai.model_used || 'offline_mock')}</span>
+                <span>Data Minimization: Enforced | Prompt Injection Boundary: Active</span>
+              </div>
+            </div>
+          `;
+        }
+      } else {
+        if (aiTag) {
+          aiTag.textContent = 'UNCONFIGURED';
+          aiTag.className = 'tag tag-amber';
+        }
+        if (aiCont) {
+          aiCont.innerHTML = `
+            <div style="background: var(--bg-inset); border: 1px solid var(--border-subtle); padding: 0.85rem; border-radius: 2px; font-size: 12.5px; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <strong style="color: var(--accent-amber);">AI analysis unavailable — configure provider</strong><br>
+                <span style="font-size: 11.5px; color: var(--text-muted);">${escapeHtml(ai.error || 'Provider not configured or offline.')}</span>
+              </div>
+              <button type="button" onclick="loadAiAnalysis()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px;">
+                &#8635; Retry
+              </button>
+            </div>
+          `;
+        }
+      }
+    } catch (e) {
+      console.warn('AI analysis fetch warning:', e);
+      if (aiTag) { aiTag.textContent = 'UNAVAILABLE'; aiTag.className = 'tag tag-copper'; }
+      if (aiCont) {
+        aiCont.innerHTML = `
+          <div style="background: var(--bg-inset); border: 1px solid rgba(239, 68, 68, 0.3); padding: 0.85rem; border-radius: 2px; font-size: 12px; color: var(--accent-red); display: flex; justify-content: space-between; align-items: center;">
+            <span>AI analysis request failed: ${escapeHtml(e.message)}</span>
+            <button type="button" onclick="loadAiAnalysis()" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px;">
+              &#8635; Retry
+            </button>
+          </div>
+        `;
+      }
+    }
+  }
+
+  // Action: Trigger Synthetic Repair
+  async function triggerSyntheticRepair() {
+    const btn = document.getElementById('btn-trigger-repair');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '&#8987; Repairing PDF structure...';
+    }
+    try {
+      const res = await fetchWithTimeout(`/api/sessions/${SESSION_ID}/repair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }, 15000);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert('Synthetic repair failed: ' + (err.detail || res.statusText));
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '&#9874; Retry Synthetic Repair (Demo)';
+        }
+        return;
+      }
+      await loadReconstructionMetadata();
+      await loadSessionDetail();
+    } catch (e) {
+      console.error('Synthetic repair error:', e);
+      alert('Network error during repair: ' + e.message);
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '&#9874; Retry Synthetic Repair (Demo)';
+      }
+    }
+  }
+
+  // Concurrent Orchestrator (Never blocks one subsystem for another)
+  async function loadOverview() {
+    hideError();
+    await Promise.allSettled([
+      loadSessionDetail(),
+      loadEvidenceBundle(),
+      loadReconstructionMetadata(),
+      loadIntelligenceReport(),
+      loadAiAnalysis()
+    ]);
+  }
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', loadOverview);
+  } else {
+    loadOverview();
+  }
 </script>
 """
     rendered_content = (
@@ -813,9 +1506,9 @@ __SUBNAV__
   <div class="container-wide">
     <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
       <div>
-        <div class="section-eyebrow">Evidentiary Admissibility</div>
-        <h1 class="section-title">100% Byte-Level Provenance Ledger</h1>
-        <p style="color: var(--text-secondary); font-size: 13.5px;">
+        <div class="section-eyebrow" id="prov-eyebrow">Evidentiary Admissibility</div>
+        <h1 class="section-title" id="prov-title">100% Byte-Level Provenance Ledger</h1>
+        <p style="color: var(--text-secondary); font-size: 13.5px;" id="prov-desc">
           Unbroken mathematical mapping from every output byte in the reconstructed file back to its physical origin.
         </p>
       </div>
@@ -823,7 +1516,7 @@ __SUBNAV__
         <a href="/api/sessions/__SESSION_ID__/reconstruction/view" target="_blank" class="btn btn-secondary">
           &#8599; View in Browser Tab
         </a>
-        <a href="/api/sessions/__SESSION_ID__/reconstruction/download" class="btn btn-primary" download>
+        <a href="/api/sessions/__SESSION_ID__/reconstruction/download" class="btn btn-primary" id="prov-download-btn" download>
           &darr; Download Reconstructed PDF
         </a>
       </div>
@@ -833,15 +1526,15 @@ __SUBNAV__
     <div class="panel" style="background: var(--bg-surface); margin-bottom: 1.5rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
         <div>
-          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">RECONSTRUCTED SHA-256 HASH</span>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 0.25rem;" id="prov-hash-label">RECONSTRUCTED SHA-256 HASH</span>
           <span id="prov-sha256" class="hash-cell" style="font-size: 13px; font-weight: 700;">Loading digest&hellip;</span>
         </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
-          <div class="env-indicator">
-            <span class="env-dot"></span>
-            <span>PROVENANCE: 100% COVERAGE</span>
+          <div class="env-indicator" id="prov-env-indicator">
+            <span class="env-dot" id="prov-env-dot"></span>
+            <span id="prov-coverage-text">PROVENANCE: 100% COVERAGE</span>
           </div>
-          <span class="tag tag-copper">CANDIDATE-ONLY JOINS</span>
+          <span class="tag tag-copper" id="prov-tag">CANDIDATE-ONLY JOINS</span>
         </div>
       </div>
     </div>
@@ -849,19 +1542,19 @@ __SUBNAV__
     <!-- PROVENANCE TABLE -->
     <div class="panel" style="padding: 0; overflow: hidden;">
       <div style="padding: 0.75rem 1.25rem; border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
-        <span class="panel-title">Authentic Assembly Sequence &amp; Physical Mappings</span>
-        <span class="tag tag-green">ZERO INTERPOLATION</span>
+        <span class="panel-title" id="prov-panel-title">Authentic Assembly Sequence &amp; Physical Mappings</span>
+        <span class="tag tag-green" id="prov-sub-tag">ZERO INTERPOLATION</span>
       </div>
 
       <div class="table-container" style="margin-bottom: 0; border: none;">
         <table class="data-table" id="prov-table">
           <thead>
             <tr>
-              <th>Output Byte Range</th>
-              <th>Source Media Offset</th>
-              <th>Fragment ID</th>
+              <th id="th-out-range">Output Byte Range</th>
+              <th id="th-src-offset">Source Media Offset</th>
+              <th id="th-frag-id">Fragment ID</th>
               <th>Length</th>
-              <th>Contiguity Verification</th>
+              <th id="th-contig">Contiguity Verification</th>
               <th>Authentic Status</th>
             </tr>
           </thead>
@@ -885,32 +1578,112 @@ __SUBNAV__
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
 
-      document.getElementById('prov-sha256').textContent = data.reconstructed_sha256 || '1ba5d499d667001095a9fefa4d57551538f742824bb2e2de1feae5e224d64caf';
+      const dot = document.getElementById('prov-env-dot');
+      const covText = document.getElementById('prov-coverage-text');
+      const tag = document.getElementById('prov-tag');
+      const subTag = document.getElementById('prov-sub-tag');
+      const hashEl = document.getElementById('prov-sha256');
+      const hashLabel = document.getElementById('prov-hash-label');
+
+      if (data.is_intact_passthrough) {
+        hashEl.textContent = data.reconstructed_sha256 || 'N/A';
+        if (hashLabel) hashLabel.textContent = 'ORIGINAL BITSTREAM SHA-256 HASH';
+        if (dot) dot.style.background = 'var(--accent-green)';
+        if (covText) covText.textContent = 'INTACT PASSTHROUGH: 100% ORIGINAL';
+        if (tag) {
+          tag.textContent = 'AUTHENTIC BITSTREAM (UNFRAGMENTED)';
+          tag.className = 'tag tag-green';
+        }
+        if (subTag) {
+          subTag.textContent = 'EXACT BITSTREAM PRESERVED';
+          subTag.className = 'tag tag-green';
+        }
+        const eyebrow = document.getElementById('prov-eyebrow');
+        const title = document.getElementById('prov-title');
+        const desc = document.getElementById('prov-desc');
+        const dlBtn = document.getElementById('prov-download-btn');
+        const panelTitle = document.getElementById('prov-panel-title');
+        if (eyebrow) eyebrow.textContent = 'Intact Bitstream Verification';
+        if (title) title.textContent = 'Original Bitstream Integrity Ledger';
+        if (desc) desc.textContent = 'Verifiable cryptographic attestation of direct, intact PDF ingestion. Exact original bytes preserved without sector slicing or fragment reconstruction.';
+        if (dlBtn) dlBtn.innerHTML = '&darr; Download Verified Original PDF';
+        if (panelTitle) panelTitle.textContent = 'Direct Bitstream Ingestion Record';
+
+        tbody.innerHTML = `
+          <tr>
+            <td class="code-cell" style="color: var(--accent-copper); font-weight: 700;">[0..${data.pdf_size_bytes}]</td>
+            <td class="code-cell" style="color: var(--text-muted);">[0..${data.pdf_size_bytes}]</td>
+            <td class="code-cell" style="color: var(--accent-cyan);">INTACT-STREAM</td>
+            <td class="code-cell">${data.pdf_size_bytes} B</td>
+            <td><span class="tag tag-green" style="font-size: 9.5px;">Complete Bitstream (100% Intact)</span></td>
+            <td><span class="tag tag-green" style="font-size: 9.5px;">Authentic Byte Verified</span></td>
+          </tr>
+        `;
+        return;
+      }
+
+      if (data.status === 'incomplete' || !data.complete) {
+        hashEl.textContent = 'N/A (INCOMPLETE CARVE)';
+        if (dot) dot.style.background = 'var(--accent-amber)';
+        const unplaced = data.unplaced_fragments_count || 0;
+        if (covText) covText.textContent = `PARTIAL OUTPUT: ${unplaced} UNPLACED FRAGMENTS`;
+        if (tag) {
+          tag.textContent = 'INCOMPLETE (UNVERIFIED)';
+          tag.className = 'tag tag-amber';
+        }
+        if (subTag) {
+          subTag.textContent = 'PARTIAL / UNALIGNED INPUT';
+          subTag.className = 'tag tag-amber';
+        }
+        const eyebrow = document.getElementById('prov-eyebrow');
+        const title = document.getElementById('prov-title');
+        const desc = document.getElementById('prov-desc');
+        const dlBtn = document.getElementById('prov-download-btn');
+        if (eyebrow) eyebrow.textContent = 'Partial Assembly Ledger';
+        if (title) title.textContent = 'Incomplete Byte-Level Provenance Ledger';
+        if (desc) desc.textContent = 'Reconstruction halted before all fragments could be deterministically verified. Displaying partial fragments with authentic joins.';
+        const provList = data.provenance || [];
+        if (provList.length === 0) {
+          if (dlBtn) {
+            dlBtn.innerHTML = '&#9888; Reconstruction Halted (0 Placed)';
+            dlBtn.className = 'btn btn-secondary';
+            dlBtn.removeAttribute('href');
+            dlBtn.style.cursor = 'not-allowed';
+            dlBtn.style.opacity = '0.6';
+          }
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--accent-amber); padding: 2rem;">Reconstruction incomplete: ${unplaced} fragment(s) remain unplaced. Structural sequence halted; no verified fragments assembled.</td></tr>`;
+          return;
+        }
+        if (dlBtn) dlBtn.innerHTML = '&darr; Download Partial PDF (Unverified)';
+        tbody.innerHTML = provList.map(p => `
+          <tr>
+            <td class="code-cell" style="color: var(--accent-copper); font-weight: 700;">[${p.output_offset_start}..${p.output_offset_end}]</td>
+            <td class="code-cell" style="color: var(--text-muted);">[${p.media_offset_start}..${p.media_offset_end}]</td>
+            <td class="code-cell" style="color: var(--accent-cyan);">${p.fragment_id}</td>
+            <td class="code-cell">${p.byte_count} B</td>
+            <td><span class="tag tag-amber" style="font-size: 9.5px;">Partial (Incomplete Chain)</span></td>
+            <td><span class="tag tag-amber" style="font-size: 9.5px;">Unverified Output</span></td>
+          </tr>
+        `).join('');
+        return;
+      }
+
+      // Normal verified / complete reconstruction
+      hashEl.textContent = data.reconstructed_sha256 || 'N/A';
+      if (dot) dot.style.background = 'var(--accent-green)';
+      if (covText) covText.textContent = 'PROVENANCE: 100% COVERAGE';
+      if (tag) {
+        tag.textContent = 'CANDIDATE-ONLY JOINS';
+        tag.className = 'tag tag-copper';
+      }
+      if (subTag) {
+        subTag.textContent = 'ZERO INTERPOLATION';
+        subTag.className = 'tag tag-green';
+      }
 
       const provList = data.provenance || [];
       if (provList.length === 0) {
-        // Fallback realistic provenance ledger for 8 fragments
-        const syntheticItems = [
-          { out: '[0..255]', src: '[1024..1279]', id: 'FRAG-0001', bytes: 256 },
-          { out: '[256..511]', src: '[512..767]', id: 'FRAG-0002', bytes: 256 },
-          { out: '[512..767]', src: '[1792..2047]', id: 'FRAG-0003', bytes: 256 },
-          { out: '[768..1023]', src: '[0..255]', id: 'FRAG-0004', bytes: 256 },
-          { out: '[1024..1279]', src: '[1280..1535]', id: 'FRAG-0005', bytes: 256 },
-          { out: '[1280..1535]', src: '[256..511]', id: 'FRAG-0006', bytes: 256 },
-          { out: '[1536..1791]', src: '[1536..1791]', id: 'FRAG-0007', bytes: 256 },
-          { out: '[1792..2047]', src: '[768..1023]', id: 'FRAG-0008', bytes: 256 },
-        ];
-
-        tbody.innerHTML = syntheticItems.map(item => `
-          <tr>
-            <td class="code-cell" style="color: var(--accent-copper); font-weight: 700;">${item.out}</td>
-            <td class="code-cell" style="color: var(--text-muted);">${item.src}</td>
-            <td class="code-cell" style="color: var(--accent-cyan);">${item.id}</td>
-            <td class="code-cell">${item.bytes} B</td>
-            <td><span class="tag tag-amber" style="font-size: 9.5px;">Candidate Only (contiguity=False)</span></td>
-            <td><span class="tag tag-green" style="font-size: 9.5px;">Authentic Byte Verified</span></td>
-          </tr>
-        `).join('');
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">No fragment provenance records available for this session.</td></tr>';
         return;
       }
 

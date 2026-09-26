@@ -33,6 +33,7 @@ __all__ = [
     "make_fragment_id",
     "parse_fragment_id",
     "Fragment",
+    "validate_fragment_collection",
 ]
 
 FRAGMENT_ID_PREFIX = "FRG"
@@ -164,3 +165,36 @@ class Fragment:
             "bytes_sha256": self.bytes_sha256,
             "warnings": list(self.warnings),
         }
+
+
+def validate_fragment_collection(fragments: Sequence[Fragment]) -> tuple[str, ...]:
+    """Inspect a collection of carved fragments for integrity anomalies.
+
+    Detects:
+    - Empty collection (no fragments).
+    - Duplicate fragment IDs.
+    - Overlapping byte ranges in source media.
+    - Zero-sized or malformed fragment spans.
+    """
+    anomalies: list[str] = []
+    if not fragments:
+        return ("fragment collection is empty: zero fragments available",)
+
+    seen_ids: set[str] = set()
+    for f in fragments:
+        if f.fragment_id in seen_ids:
+            anomalies.append(f"duplicate fragment ID detected in collection: {f.fragment_id}")
+        seen_ids.add(f.fragment_id)
+        if f.size_bytes <= 0:
+            anomalies.append(f"zero or negative size for fragment {f.fragment_id}")
+
+    # Check for overlapping ranges in source media
+    sorted_frags = sorted(fragments, key=lambda f: (f.start, f.end))
+    for prev, curr in zip(sorted_frags, sorted_frags[1:]):
+        if prev.end > curr.start:
+            anomalies.append(
+                f"overlapping fragment ranges: {prev.fragment_id} [{prev.start}, {prev.end}) "
+                f"overlaps with {curr.fragment_id} [{curr.start}, {curr.end})"
+            )
+
+    return tuple(anomalies)

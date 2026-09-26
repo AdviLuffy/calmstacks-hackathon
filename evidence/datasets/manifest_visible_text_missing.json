@@ -1,0 +1,121 @@
+{
+  "blob": {
+    "name": "blob_visible_text_missing.bin",
+    "path": "evidence/blob_visible_text_missing.bin",
+    "sha256": "a6af8c54507955d79f819820640154e44900d9497922c1cd4e6dd681f3cf802d",
+    "size": 2048
+  },
+  "block_size": 256,
+  "dataset_format_version": 1,
+  "fragment_count": 8,
+  "fragments": [
+    {
+      "blob_offset": 0,
+      "fragment_id": "frag_e0f40c379403498c",
+      "kind": "object",
+      "length": 256,
+      "object_number": 1,
+      "original_index": 1,
+      "sha256": "e0f40c379403498c01e304535e368e52bc2cf68b93e73184add22ced7dab33ac",
+      "source_offset": 256
+    },
+    {
+      "blob_offset": 256,
+      "fragment_id": "frag_71f3d766ee6b8199",
+      "kind": "xref",
+      "length": 256,
+      "object_number": null,
+      "original_index": 6,
+      "sha256": "71f3d766ee6b819926dd5855072a40a5aebd1714ff6ece1067d57d7af3ed9f1a",
+      "source_offset": 1536
+    },
+    {
+      "blob_offset": 512,
+      "fragment_id": "frag_8390347f50c2e355",
+      "kind": "object",
+      "length": 256,
+      "object_number": 4,
+      "original_index": 4,
+      "sha256": "8390347f50c2e3557d646f27e3056b1b5c9d8cde429d729eeaef9dd692a33fc7",
+      "source_offset": 1024
+    },
+    {
+      "blob_offset": 768,
+      "fragment_id": "frag_247b0c60f638f7ce",
+      "kind": "object",
+      "length": 256,
+      "object_number": 3,
+      "original_index": 3,
+      "sha256": "247b0c60f638f7ce8ca9f24348be3f17231a46f4e23c253b0d8c0c928eeacf32",
+      "source_offset": 768
+    },
+    {
+      "blob_offset": 1024,
+      "fragment_id": "frag_570dd948decd7292",
+      "kind": "object",
+      "length": 256,
+      "object_number": 2,
+      "original_index": 2,
+      "sha256": "570dd948decd7292e39bf4d247ff729de2cade18635e38bc5150c81701cf130e",
+      "source_offset": 512
+    },
+    {
+      "blob_offset": 1280,
+      "fragment_id": "frag_0d38f61b5da8a20b",
+      "kind": "header",
+      "length": 256,
+      "object_number": null,
+      "original_index": 0,
+      "sha256": "0d38f61b5da8a20b57282e4e77732835400642bfd43a1a7a72b4474bab93fec2",
+      "source_offset": 0
+    },
+    {
+      "blob_offset": 1536,
+      "fragment_id": "frag_df1ac3456063fec2",
+      "kind": "trailer",
+      "length": 256,
+      "object_number": null,
+      "original_index": 7,
+      "sha256": "df1ac3456063fec275035a03d0bb4d88acc474563dea5d2298536ea773df499c",
+      "source_offset": 1792
+    },
+    {
+      "blob_offset": 1792,
+      "fragment_id": "frag_aa5e1296bcec4c5a",
+      "kind": "object",
+      "length": 256,
+      "object_number": 5,
+      "original_index": 5,
+      "sha256": "aa5e1296bcec4c5afda14b2b4d2ef5de62e11f85b1e0faf2de2feb463a83f923",
+      "source_offset": 1280
+    }
+  ],
+  "generator": {
+    "name": "trace-evidence",
+    "version": "0.1.0"
+  },
+  "missing_fragment_count": 2,
+  "missing_original_indices": [
+    8,
+    9
+  ],
+  "original": {
+    "block_count": 10,
+    "name": "visible_text.pdf",
+    "path": "groundtruth/visible_text.pdf",
+    "sha256": "9decf803a2cc4688356ebe1f6788ab577c637ec0f54cfd9dd52fae3b236435f2",
+    "size": 2560
+  },
+  "permutation": [
+    1,
+    6,
+    4,
+    3,
+    2,
+    0,
+    7,
+    5
+  ],
+  "seed": 2026,
+  "text_content": "TRACE FORENSIC RECONSTRUCTION TEST"
+}

@@ -1,0 +1,5 @@
+# Explicit binary types to prevent CRLF normalization corrupting forensic evidence
+*.bin binary
+*.pdf binary
+*.raw binary
+*.dd binary
