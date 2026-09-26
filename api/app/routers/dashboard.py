@@ -112,6 +112,17 @@ def list_fixtures() -> dict[str, Any]:
             "ready_to_carve": True,
         },
         {
+            "fixture_id": "105block_one_missing",
+            "name": "TRACE 105-Block Erased Region (TRACE_105block_one_missing.bin)",
+            "type": "raw_media",
+            "size_bytes": 26880,
+            "fragments_count": 98,
+            "description": "Deterministic 26,880-byte 105-block disk image with erased slot 53 (offset 13,312-13,568) and 6 trailing zero padding blocks. Reconstructs surviving fragments and performs synthetic repair.",
+            "is_synthetic": True,
+            "label": "ERASED REGION FIXTURE",
+            "ready_to_carve": True,
+        },
+        {
             "fixture_id": "bundle_minimal",
             "name": "M0 Positive Contract Floor Bundle (bundle_minimal.json)",
             "type": "bundle",
@@ -258,13 +269,23 @@ async def carve_raw_evidence(
             raise HTTPException(status_code=404, detail="Damaged fixture blob_visible_text_4missing.bin not found on disk")
         media_path = blob_path
         media_bytes = blob_path.read_bytes()
+    elif fixture_id == "105block_one_missing":
+        # 105-block erased region fixture (TRACE_105block_one_missing.bin)
+        blob_path = EVIDENCE_DIR / "TRACE_105block_one_missing.bin"
+        if not blob_path.is_file():
+            alt = REPO_ROOT / "evidence" / "datasets" / "evidence" / "TRACE_105block_one_missing.bin"
+            blob_path = alt if alt.is_file() else blob_path
+        if not blob_path.is_file():
+            raise HTTPException(status_code=404, detail="Fixture TRACE_105block_one_missing.bin not found on disk")
+        media_path = blob_path
+        media_bytes = blob_path.read_bytes()
     elif file is not None:
         media_bytes = await file.read()
         if not media_bytes:
             raise InvalidInputError("uploaded evidence file is empty (0 bytes)")
 
         # Fast intact-PDF check: if media is an intact valid PDF, bypass shuffled fragment carver
-        is_intact, intact_reason, intact_telemetry = validate_intact_pdf(media_bytes)
+        is_intact, intact_reason, intact_telemetry = validate_intact_pdf(media_bytes, filename=file.filename)
         if is_intact:
             filename = file.filename or "evidence.pdf"
             bundle = build_intact_evidence_bundle(
@@ -347,12 +368,17 @@ async def carve_raw_evidence(
             gt_path = alt if alt.is_file() else gt_path
         if gt_path.is_file():
             fixture_gt_bytes = gt_path.read_bytes()
+    elif fixture_id == "105block_one_missing":
+        gt_path = REPO_ROOT / "evidence" / "datasets" / "groundtruth" / "reference_complete.pdf"
+        if gt_path.is_file():
+            fixture_gt_bytes = gt_path.read_bytes()
 
     try:
-        # Run authentic P1 pipeline
+        # Run authentic P1 pipeline (never feed ground truth into reconstruction engine for evaluation fixtures)
+        engine_gt_bytes = None if fixture_id == "105block_one_missing" else fixture_gt_bytes
         pipeline_result = run_pipeline(
             media_path=media_path,
-            original_bytes=fixture_gt_bytes,
+            original_bytes=engine_gt_bytes,
             run_id="RUN-0001",
         )
 
@@ -405,6 +431,10 @@ async def carve_raw_evidence(
                 disk_rep_pdf.write_bytes(repair_res.repaired_bytes)
                 if fixture_id in ("visible_text_missing", "visible_text_4missing"):
                     perm_path = REPO_ROOT / "evidence" / "datasets" / "evidence" / "reconstructed_repaired_visible_text.pdf"
+                    perm_path.parent.mkdir(parents=True, exist_ok=True)
+                    perm_path.write_bytes(repair_res.repaired_bytes)
+                elif fixture_id == "105block_one_missing":
+                    perm_path = REPO_ROOT / "evidence" / "datasets" / "evidence" / "reconstructed_repaired_105block.pdf"
                     perm_path.parent.mkdir(parents=True, exist_ok=True)
                     perm_path.write_bytes(repair_res.repaired_bytes)
             except Exception:
@@ -527,6 +557,8 @@ async def carve_raw_evidence(
             "raw_download_url": f"/api/sessions/{record.session_id}/reconstruction/download?mode=raw",
             "missing_elements": list(pipeline_result.integrity_report.missing_elements),
             "corrupted_fragment_ids": list(pipeline_result.integrity_report.corrupted_fragment_ids),
+            "erased_regions": [list(r) for r in pipeline_result.scan.erased_regions],
+            "scan_warnings": list(pipeline_result.scan.warnings),
             "pdf_size_bytes": len(raw_pdf_bytes),
             "fragments_carved": len(pipeline_result.scan.fragments),
             "fragments_placed": len(pipeline_result.reconstruction.fragment_order),
@@ -753,6 +785,31 @@ def get_reconstruction_details(
         else None
     )
 
+    # Check if a repaired PDF is available on disk or in cache
+    rep_bytes = _RECONSTRUCTED_FILES.get(f"{session_id}_repaired")
+    if rep_bytes is None:
+        disk_rep = settings.session_root / f"{session_id}_repaired.pdf"
+        if disk_rep.is_file():
+            rep_bytes = disk_rep.read_bytes()
+            _RECONSTRUCTED_FILES[f"{session_id}_repaired"] = rep_bytes
+
+    has_rep = bool(rep_bytes and len(rep_bytes) > 0)
+    rep_pages = 0
+    rep_txt = ""
+    rep_open = False
+    if has_rep:
+        from trace_evidence.repair import validate_and_render_pdf
+        rep_open, rep_pages, rep_txt, _ = validate_and_render_pdf(rep_bytes)
+
+    if has_rep and rep_open and not is_complete:
+        recovery_state_str = "SYNTHETICALLY REPAIRED — NOT BYTE-IDENTICAL TO ORIGINAL"
+    elif is_verified and is_complete:
+        recovery_state_str = "ORIGINAL BYTES RECOVERED AND VERIFIED"
+    elif pdf_bytes and not is_complete:
+        recovery_state_str = "PARTIAL — MISSING CONTENT COULD NOT BE RESTORED"
+    else:
+        recovery_state_str = "UNRECOVERABLE" if not pdf_bytes else "COMPLETE AND VERIFIED"
+
     return {
         "session_id": session_id,
         "status": status_val,
@@ -774,15 +831,21 @@ def get_reconstruction_details(
         "media_size_bytes": media_size,
         "media_sha256": media_sha256,
         "write_blocked": bool(media.get("write_blocked", False)),
-        "recovery_state": meta.get("recovery_state") or (
-            "COMPLETE AND VERIFIED" if is_verified else (
-                "PARTIAL" if (pdf_bytes and not is_complete) else (
-                    "UNRECOVERABLE" if not pdf_bytes else "COMPLETE AND VERIFIED"
-                )
-            )
-        ),
-        "missing_elements": meta.get("missing_elements") or [],
-        "corrupted_fragment_ids": meta.get("corrupted_fragment_ids") or [],
+        "recovery_state": meta.get("recovery_state") or recovery_state_str,
+        "honest_status": meta.get("honest_status") or recovery_state_str,
+        "has_repaired_file": bool(has_rep and rep_open),
+        "repaired_pdf_size": len(rep_bytes) if (has_rep and rep_open) else None,
+        "repaired_sha256": hashlib.sha256(rep_bytes).hexdigest() if (has_rep and rep_open) else None,
+        "repaired_is_openable": rep_open,
+        "repaired_page_count": rep_pages,
+        "repaired_extracted_text": rep_txt,
+        "repaired_download_url": f"/api/sessions/{session_id}/reconstruction/download?mode=repaired",
+        "raw_download_url": f"/api/sessions/{session_id}/reconstruction/download?mode=raw",
+        "repair_action_url": f"/api/sessions/{session_id}/repair",
+        "missing_elements": ext.get("missing_elements") or [],
+        "corrupted_fragment_ids": ext.get("corrupted_fragment_ids") or [],
+        "erased_regions": ext.get("erased_regions") or [],
+        "scan_warnings": ext.get("scan_warnings") or [],
         "artifacts": [],
     }
 

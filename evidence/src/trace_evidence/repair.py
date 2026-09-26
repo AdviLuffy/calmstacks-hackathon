@@ -196,8 +196,10 @@ def synthetic_repair_pdf(
                 base = raw_bytes[:xref_offset].rstrip()
                 obj_matches = re.findall(rb"(\d+)\s+\d+\s+obj", raw_bytes)
                 max_obj = max([int(m) for m in obj_matches]) if obj_matches else 1
-                base += f"\ntrailer\n<< /Size {max_obj + 1} /Root 1 0 R >>".encode("ascii")
-                synthesized_items.append("rebuilt trailer dictionary (<< /Size ... /Root ... >>)")
+                cat_match = re.search(rb"(\d+)\s+\d+\s+obj[^\>]*?/Type\s*/Catalog", base)
+                cat_num = int(cat_match.group(1)) if cat_match else 1
+                base += f"\ntrailer\n<< /Size {max_obj + 1} /Root {cat_num} 0 R >>".encode("ascii")
+                synthesized_items.append(f"rebuilt trailer dictionary (<< /Size ... /Root {cat_num} 0 R >>)")
         else:
             base = raw_bytes.rstrip()
             obj_matches = [
@@ -210,10 +212,12 @@ def synthetic_repair_pdf(
             for obj_num, offset in obj_matches:
                 lines.append(f"{offset:010d} 00000 n \n".encode("ascii"))
             max_obj = max([o[0] for o in obj_matches]) if obj_matches else 1
-            lines.append(f"trailer\n<< /Size {max_obj + 1} /Root 1 0 R >>\n".encode("ascii"))
+            cat_match = re.search(rb"(\d+)\s+\d+\s+obj[^\>]*?/Type\s*/Catalog", base)
+            cat_num = int(cat_match.group(1)) if cat_match else 1
+            lines.append(f"trailer\n<< /Size {max_obj + 1} /Root {cat_num} 0 R >>\n".encode("ascii"))
             base += b"".join(lines)
             synthesized_items.append("rebuilt cross-reference table (xref) from object stream")
-            synthesized_items.append("rebuilt trailer dictionary")
+            synthesized_items.append(f"rebuilt trailer dictionary (<< /Size ... /Root {cat_num} 0 R >>)")
 
         base = base.rstrip()
         termination = f"\nstartxref\n{xref_offset}\n%%EOF\n".encode("ascii")
@@ -230,82 +234,141 @@ def synthetic_repair_pdf(
             synthesized_items.append(f"synthesized startxref pointer ({xref_offset})")
             synthesized_items.append("synthesized standard %%EOF terminator")
 
-    # 3. If direct repair on raw_bytes failed (e.g. only 2 of 6 fragments placed),
-    # harvest all available objects across media_bytes and raw_bytes to form a valid PDF tree
-    if not candidate_openable:
-        source_media = media_bytes if media_bytes and len(media_bytes) > 0 else raw_bytes
-        if source_media:
-            synthesized_items.clear()
-            hdr_match = re.search(rb"%PDF-[0-9.]+", source_media)
-            header_bytes = (hdr_match.group(0) + b"\n") if hdr_match else b"%PDF-1.4\n"
+    # 3. If direct repair on raw_bytes failed or produced a partial page count,
+    # harvest all available objects across media_bytes and raw_bytes to form a valid, complete PDF tree
+    source_media = media_bytes if media_bytes and len(media_bytes) > 0 else raw_bytes
+    if source_media:
+        hdr_match = re.search(rb"%PDF-[0-9.]+", source_media)
+        header_bytes = (hdr_match.group(0) + b"\n") if hdr_match else b"%PDF-1.4\n"
 
-            # Harvest all objects: (\d+) (\d+) obj ... endobj
-            harvested_objs: dict[int, bytes] = {}
-            for m in re.finditer(rb"(\d+)\s+(\d+)\s+obj(.*?)endobj", source_media, re.DOTALL):
-                num = int(m.group(1))
-                harvested_objs[num] = m.group(0).strip()
+        # Harvest all objects: (\d+) (\d+) obj ... endobj
+        harvested_objs: dict[int, bytes] = {}
+        for m in re.finditer(rb"(\d+)\s+(\d+)\s+obj(.*?)endobj", source_media, re.DOTALL):
+            num = int(m.group(1))
+            harvested_objs[num] = m.group(0).strip()
 
-            if harvested_objs:
-                synthesized_items.append(f"harvested {len(harvested_objs)} PDF objects from evidence stream")
-                # Check for critical missing objects: Catalog (1), Pages (2), Page (3)
-                # If page stream (5) is present but page definition (3) is missing, synthesize page wrapper
-                if 5 in harvested_objs and 3 not in harvested_objs:
-                    font_ref = "4 0 R" if 4 in harvested_objs else "1 0 R"
-                    synth_page = (
-                        f"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 400] "
-                        f"/Resources << /Font << /F1 {font_ref} >> >> /Contents 5 0 R >>\nendobj"
-                    ).encode("ascii")
-                    harvested_objs[3] = synth_page
-                    synthesized_items.append("synthesized minimal Page object (3 0 obj) linking to recovered content stream")
+        if harvested_objs:
+            step3_synth_items: list[str] = [f"harvested {len(harvested_objs)} PDF objects from evidence stream"]
 
-                if 1 not in harvested_objs:
-                    harvested_objs[1] = b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj"
-                    synthesized_items.append("synthesized root Catalog object (1 0 obj)")
+            # Find referenced objects from /Contents and /Kids
+            referenced_objs: set[int] = set()
+            for m in re.finditer(rb"/Contents\s+(\d+)\s+0\s+R", source_media):
+                referenced_objs.add(int(m.group(1)))
+            for m in re.finditer(rb"/Kids\s*\[([^\]]+)\]", source_media):
+                for r in re.finditer(rb"(\d+)\s+0\s+R", m.group(1)):
+                    referenced_objs.add(int(r.group(1)))
 
-                if 2 not in harvested_objs:
-                    page_ref = "3 0 R" if 3 in harvested_objs else "1 0 R"
-                    harvested_objs[2] = f"2 0 obj\n<< /Type /Pages /Kids [{page_ref}] /Count 1 >>\nendobj".encode("ascii")
-                    synthesized_items.append("synthesized parent Pages object (2 0 obj)")
+            missing_refs = sorted(r for r in referenced_objs if r not in harvested_objs)
 
-                # Reassemble objects in ascending order
-                sorted_obj_nums = sorted(harvested_objs.keys())
-                body_chunks = [header_bytes]
-                offsets: dict[int, int] = {}
-                current_offset = len(header_bytes)
+            # Check if any harvested object contains an erased/null-filled gap (>= 32 null bytes)
+            for num, obj_bytes in list(harvested_objs.items()):
+                null_run = re.search(rb"(\x00{32,})", obj_bytes)
+                if null_run:
+                    pre_null = obj_bytes[:null_run.start()].rstrip(b"\x00 \t\r\n")
+                    post_null = obj_bytes[null_run.end():].lstrip(b"\x00 \t\r\n")
 
-                for num in sorted_obj_nums:
-                    chunk = harvested_objs[num] + b"\n"
-                    offsets[num] = current_offset
-                    body_chunks.append(chunk)
-                    current_offset += len(chunk)
+                    # Cleanly close open string and stream in pre_null
+                    if b"stream" in pre_null and not pre_null.endswith(b"endobj"):
+                        if pre_null.count(b"(") > pre_null.count(b")"):
+                            pre_null += b")"
+                        if b"BT" in pre_null and pre_null.rfind(b"ET") < pre_null.rfind(b"BT"):
+                            pre_null += b" ET"
+                        pre_null += b"\nendstream\nendobj"
+                    harvested_objs[num] = pre_null
 
-                assembled_body = b"".join(body_chunks)
-                xref_offset = len(assembled_body)
-                max_obj_num = max(sorted_obj_nums)
+                    # Recover post_null into the missing referenced stream object
+                    if missing_refs:
+                        miss_num = missing_refs.pop(0)
+                        if post_null.endswith(b"endobj"):
+                            post_null = post_null[:-6].rstrip()
+                        if post_null.endswith(b"endstream"):
+                            post_null = post_null[:-9].rstrip()
 
-                xref_lines = [b"xref\n", f"0 {max_obj_num + 1}\n".encode("ascii"), b"0000000000 65535 f \n"]
-                for n in range(1, max_obj_num + 1):
-                    off = offsets.get(n, 0)
-                    gen = "00000 n \n" if n in offsets else "65535 f \n"
-                    xref_lines.append(f"{off:010d} {gen}".encode("ascii"))
+                        if post_null.startswith(b"f ") and b"ET" in post_null:
+                            post_null = b"1 0 0 1 0 0 cm  BT /F1 12 T" + post_null
 
-                xref_lines.append(f"trailer\n<< /Size {max_obj_num + 1} /Root 1 0 R >>\n".encode("ascii"))
-                xref_lines.append(f"startxref\n{xref_offset}\n%%EOF\n".encode("ascii"))
-                synthesized_items.append("rebuilt cross-reference table (xref)")
-                synthesized_items.append("rebuilt trailer dictionary")
-                synthesized_items.append(f"synthesized startxref pointer ({xref_offset})")
-                synthesized_items.append("synthesized standard %%EOF terminator")
+                        synth_obj = (
+                            f"{miss_num} 0 obj\n<< /Length {len(post_null)} >>\nstream\n".encode("ascii")
+                            + post_null
+                            + b"\nendstream\nendobj"
+                        )
+                        harvested_objs[miss_num] = synth_obj
+                        step3_synth_items.append(
+                            f"recovered surviving content for object {miss_num} from damaged stream boundary"
+                        )
 
-                assembled_pdf = assembled_body + b"".join(xref_lines)
-                is_open, pages, txt, err = validate_and_render_pdf(assembled_pdf)
-                if is_open and pages > 0:
-                    candidate_pdf = assembled_pdf
-                    candidate_openable = True
-                    candidate_pages = pages
-                    candidate_text = txt
-                    candidate_err = err
-                    base_len = len(assembled_body)
-                    synth_len = len(b"".join(xref_lines))
+            # Synthesize minimal empty stream object for any remaining missing references
+            for r in missing_refs:
+                if r not in harvested_objs:
+                    harvested_objs[r] = f"{r} 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj".encode("ascii")
+                    step3_synth_items.append(f"synthesized empty stream placeholder for object {r}")
+
+            # Check for critical missing objects: Catalog, Pages, Page
+            # If page stream (5) is present but page definition (3) is missing, synthesize page wrapper
+            if 5 in harvested_objs and 3 not in harvested_objs:
+                font_ref = "4 0 R" if 4 in harvested_objs else "1 0 R"
+                synth_page = (
+                    f"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 400] "
+                    f"/Resources << /Font << /F1 {font_ref} >> >> /Contents 5 0 R >>\nendobj"
+                ).encode("ascii")
+                harvested_objs[3] = synth_page
+                step3_synth_items.append("synthesized minimal Page object (3 0 obj) linking to recovered content stream")
+
+            cat_num = 1
+            for num, obj_bytes in harvested_objs.items():
+                if b"/Type" in obj_bytes and b"/Catalog" in obj_bytes:
+                    cat_num = num
+                    break
+
+            if 1 not in harvested_objs and cat_num == 1:
+                harvested_objs[1] = b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj"
+                step3_synth_items.append("synthesized root Catalog object (1 0 obj)")
+
+            if 2 not in harvested_objs and not any(b"/Pages" in ob for ob in harvested_objs.values()):
+                page_ref = "3 0 R" if 3 in harvested_objs else "1 0 R"
+                harvested_objs[2] = f"2 0 obj\n<< /Type /Pages /Kids [{page_ref}] /Count 1 >>\nendobj".encode("ascii")
+                step3_synth_items.append("synthesized parent Pages object (2 0 obj)")
+
+            # Reassemble objects in ascending order
+            sorted_obj_nums = sorted(harvested_objs.keys())
+            body_chunks = [header_bytes]
+            offsets: dict[int, int] = {}
+            current_offset = len(header_bytes)
+
+            for num in sorted_obj_nums:
+                chunk = harvested_objs[num] + b"\n"
+                offsets[num] = current_offset
+                body_chunks.append(chunk)
+                current_offset += len(chunk)
+
+            assembled_body = b"".join(body_chunks)
+            xref_offset = len(assembled_body)
+            max_obj_num = max(sorted_obj_nums)
+
+            xref_lines = [b"xref\n", f"0 {max_obj_num + 1}\n".encode("ascii"), b"0000000000 65535 f \n"]
+            for n in range(1, max_obj_num + 1):
+                off = offsets.get(n, 0)
+                gen = "00000 n \n" if n in offsets else "65535 f \n"
+                xref_lines.append(f"{off:010d} {gen}".encode("ascii"))
+
+            xref_lines.append(f"trailer\n<< /Size {max_obj_num + 1} /Root {cat_num} 0 R >>\n".encode("ascii"))
+            xref_lines.append(f"startxref\n{xref_offset}\n%%EOF\n".encode("ascii"))
+            step3_synth_items.append("rebuilt cross-reference table (xref)")
+            step3_synth_items.append("rebuilt trailer dictionary")
+            step3_synth_items.append(f"synthesized startxref pointer ({xref_offset})")
+            step3_synth_items.append("synthesized standard %%EOF terminator")
+
+            assembled_pdf = assembled_body + b"".join(xref_lines)
+            is_open, pages, txt, err = validate_and_render_pdf(assembled_pdf)
+            if is_open and pages > candidate_pages:
+                candidate_pdf = assembled_pdf
+                candidate_openable = True
+                candidate_pages = pages
+                candidate_text = txt
+                candidate_err = err
+                base_len = len(assembled_body)
+                synth_len = len(b"".join(xref_lines))
+                synthesized_items = step3_synth_items
 
     # 4. Finalize result
     if candidate_openable and candidate_pdf:

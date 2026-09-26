@@ -259,6 +259,7 @@ def new_analysis_page() -> str:
         <div id="synthetic-section">
           <label class="form-label" for="fixture_id">Select Test Fixture</label>
           <select id="fixture_id" name="fixture_id" class="form-select">
+            <option value="105block_one_missing">TRACE 105-Block Erased Region (TRACE_105block_one_missing.bin &bull; 26,880 B &bull; 98 frags &bull; 8 Pages &bull; Missing Slot 53)</option>
             <option value="visible_text_4missing">Damaged Synthetic Reference — 4 Fragments Missing (xref, trailer, startxref, EOF) (blob_visible_text_4missing.bin &bull; 1,536 B &bull; 6 frags &bull; Synthetic Repair Demo)</option>
             <option value="visible_text_missing">Missing Fragments Synthetic Test (blob_visible_text_missing.bin &bull; 2,048 B &bull; 8 frags &bull; Synthetic Repair Demo)</option>
             <option value="judge_scenario_a">Judge Scenario A: Complete Shuffled Recovery (judge_complete_shuffled.bin &bull; 2,560 B &bull; 10 frags &bull; COMPLETE AND VERIFIED)</option>

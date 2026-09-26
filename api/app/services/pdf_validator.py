@@ -18,29 +18,45 @@ _XREF_STREAM_RE = re.compile(rb"/Type\s*/XRef\b")
 _TRAILER_RE = re.compile(rb"(?m)^trailer\b")
 
 
-def validate_intact_pdf(data: bytes) -> tuple[bool, str, dict[str, Any]]:
+def validate_intact_pdf(data: bytes, filename: str | None = None) -> tuple[bool, str, dict[str, Any]]:
     """Determine whether `data` represents a complete, unfragmented, valid PDF file.
 
     Performs structural inspection against PDF specification fundamentals:
-    1. Leading '%PDF-' magic marker at offset 0.
-    2. Trailing '%%EOF' token within terminal bytes.
-    3. Presence of authentic PDF objects (<num> <gen> obj).
-    4. Valid cross-reference architecture (either traditional startxref/xref table
+    1. Rejection of raw binary disk/media images (.bin, .raw, .img, .dd).
+    2. Rejection of media with zero-filled/erased sectors or trailing unallocated disk padding.
+    3. Leading '%PDF-' magic marker at offset 0.
+    4. Trailing '%%EOF' token within terminal bytes (without stripping null sectors).
+    5. Presence of authentic PDF objects (<num> <gen> obj).
+    6. Valid cross-reference architecture (either traditional startxref/xref table
        or ISO 32000-1 cross-reference streams).
+    7. Clean parsing by strict PDF engine without syntax or stream errors.
 
     Returns:
         (is_intact, reason, structural_telemetry)
     """
+    if filename:
+        fn_lower = filename.lower().strip()
+        if fn_lower.endswith((".bin", ".raw", ".img", ".dd", ".iso", ".dmg", ".vmdk")):
+            return False, "evidence media is a raw forensic image/container, block carving and structure recovery required", {}
+
     if not data:
         return False, "evidence is empty (0 bytes)", {}
 
     if not data.startswith(PDF_HEADER_PREFIX):
         return False, "media bitstream does not start with %PDF- header", {}
 
-    # Must contain %%EOF near the end (allow up to 2KB trailing whitespace/metadata/junk)
-    trimmed_tail = data[-2048:].rstrip(b" \t\r\n\x00")
+    # Reject media containing zero-filled/erased sectors (256+ null bytes)
+    if b"\x00" * 256 in data:
+        return False, "media bitstream contains zero-filled/erased sectors, forensic carving required", {}
+
+    # Reject media with trailing unallocated sectors/padding
+    if data.endswith(b"\x00" * 32) or (len(data) - len(data.rstrip(b"\x00"))) > 64:
+        return False, "media bitstream contains trailing unallocated disk sectors, forensic carving required", {}
+
+    # Must contain %%EOF near the end (standard whitespace only)
+    trimmed_tail = data[-1024:].rstrip(b" \t\r\n")
     if PDF_EOF_TOKEN not in trimmed_tail:
-        return False, "media bitstream does not contain %%EOF termination marker", {}
+        return False, "media bitstream does not contain %%EOF termination marker at stream end", {}
 
     # Verify at least one object definition exists
     obj_matches = _OBJ_RE.findall(data)
@@ -73,6 +89,27 @@ def validate_intact_pdf(data: bytes) -> tuple[bool, str, dict[str, Any]]:
     # A valid PDF must have cross-reference data (startxref or xref stream)
     if not has_xref_table and not has_xref_stream and b"xref" not in data:
         return False, "missing cross-reference (xref) table or stream", {}
+
+    # Strict parser validation: PDF must open and have valid pages without syntax corruption
+    try:
+        from trace_evidence.repair import validate_and_render_pdf
+        is_open, page_count, extracted_text, err = validate_and_render_pdf(data, strict_iso=True)
+        if not is_open or page_count == 0 or err:
+            return False, f"PDF structural validation failed: {err or 'unparseable'}", {}
+    except Exception as exc:
+        return False, f"PDF parser validation failed: {exc}", {}
+
+    try:
+        import fitz
+        doc = fitz.open(stream=data, filetype="pdf")
+        if doc.page_count == 0:
+            doc.close()
+            return False, "PDF contains 0 pages", {}
+        for i in range(doc.page_count):
+            _ = doc.load_page(i).get_text()
+        doc.close()
+    except Exception as exc:
+        return False, f"PDF page stream validation failed: {exc}", {}
 
     # Collect structural telemetry
     version_match = re.search(rb"%PDF-([0-9\.]+)", data)
