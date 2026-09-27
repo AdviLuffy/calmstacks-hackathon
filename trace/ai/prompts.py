@@ -111,6 +111,13 @@ def build_evidence_explanation_prompt(
         meta_lines.append(f"- Detected Structural Anomalies / Missing Elements: {list(missing_elems)}")
     if erased_regions:
         meta_lines.append(f"- Detected Zero-Filled / Erased Sectors: {list(erased_regions)}")
+    diagnostic = meta.get("diagnostic")
+    if isinstance(diagnostic, dict):
+        corr_classes = diagnostic.get("corruption_classes")
+        if corr_classes:
+            meta_lines.append(f"- Diagnosed Corruption Typology: {list(corr_classes)}")
+        if diagnostic.get("surviving_objects_count"):
+            meta_lines.append(f"- Surviving Indirect Objects: {diagnostic['surviving_objects_count']}")
     if repaired_pages > 0:
         meta_lines.append(f"- Document Pages: {repaired_pages} pages (Openable: {repaired_openable})")
 

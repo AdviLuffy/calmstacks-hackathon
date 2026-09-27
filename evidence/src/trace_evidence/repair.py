@@ -22,6 +22,11 @@ from .constants import (
     STATUS_OUTPUT_INVALID,
 )
 from .hashing import sha256_bytes
+from .pdf_recovery import (
+    CorruptionDiagnostic,
+    GeneralizedPdfRecoveryEngine,
+    diagnose_pdf_corruption,
+)
 
 __all__ = [
     "RepairResult",
@@ -29,6 +34,9 @@ __all__ = [
     "repair_pdf",
     "synthetic_repair_pdf",
     "restore_from_groundtruth",
+    "GeneralizedPdfRecoveryEngine",
+    "diagnose_pdf_corruption",
+    "CorruptionDiagnostic",
 ]
 
 
@@ -52,6 +60,7 @@ class RepairResult:
     provenance: tuple[dict[str, Any], ...] = ()
     validation_engine: str = "pypdf + PyMuPDF"
     error_message: str | None = None
+    diagnostic: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -70,6 +79,7 @@ class RepairResult:
             "provenance": list(self.provenance),
             "validation_engine": self.validation_engine,
             "error_message": self.error_message,
+            "diagnostic": self.diagnostic,
         }
 
 
@@ -459,6 +469,26 @@ def synthetic_repair_pdf(
                 synth_len = len(b"".join(xref_lines))
                 synthesized_items = step3_synth_items
 
+        # Also run GeneralizedPdfRecoveryEngine for advanced structural recovery (unpacked object streams, orphan pages, preamble stripping, operator balancing)
+        try:
+            gen_engine = GeneralizedPdfRecoveryEngine(raw_bytes=raw_bytes, media_bytes=media_bytes)
+            gen_pdf, gen_synth_items, gen_meta = gen_engine.recover()
+            if gen_pdf:
+                is_open, pages, txt, err = validate_and_render_pdf(gen_pdf)
+                if is_open and (not candidate_openable or pages > candidate_pages):
+                    candidate_pdf = gen_pdf
+                    candidate_openable = True
+                    candidate_pages = pages
+                    candidate_text = txt
+                    candidate_err = err
+                    base_len = gen_meta.get("body_size", len(gen_pdf))
+                    synth_len = gen_meta.get("synthesized_size", len(gen_pdf) - base_len)
+                    synthesized_items = gen_synth_items
+        except Exception:
+            pass
+
+    diagnostic_info = diagnose_pdf_corruption(source_media).to_dict() if source_media else None
+
     # 4. Finalize result
     if candidate_openable and candidate_pdf:
         status = STATUS_SYNTHETICALLY_REPAIRED
@@ -501,6 +531,7 @@ def synthetic_repair_pdf(
         synthesized_elements=tuple(synthesized_items),
         provenance=prov,
         error_message=candidate_err,
+        diagnostic=diagnostic_info,
     )
 
 

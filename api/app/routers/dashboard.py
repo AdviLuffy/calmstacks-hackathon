@@ -552,6 +552,7 @@ async def carve_raw_evidence(
             "synthesized_bytes_count": repair_res.synthesized_bytes_count if repair_res else 0,
             "synthesized_elements": list(repair_res.synthesized_elements) if repair_res else [],
             "repair_provenance": list(repair_res.provenance) if repair_res else [],
+            "diagnostic": repair_res.diagnostic if repair_res else None,
             "repair_action_url": f"/api/sessions/{record.session_id}/repair",
             "repaired_download_url": f"/api/sessions/{record.session_id}/reconstruction/download?mode=repaired",
             "raw_download_url": f"/api/sessions/{record.session_id}/reconstruction/download?mode=raw",
@@ -1038,6 +1039,7 @@ def run_synthetic_repair_action(
             "synthesized_bytes_count": repair_res.synthesized_bytes_count,
             "synthesized_elements": list(repair_res.synthesized_elements),
             "repair_provenance": list(repair_res.provenance),
+            "diagnostic": repair_res.diagnostic if repair_res else None,
             "repaired_download_url": f"/api/sessions/{session_id}/reconstruction/download?mode=repaired",
             "raw_download_url": f"/api/sessions/{session_id}/reconstruction/download?mode=raw",
         })
