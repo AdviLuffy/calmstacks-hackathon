@@ -127,3 +127,54 @@ class RecoveredArtifact:
             "ai_provenance": dict(self.ai_provenance),
             "metadata": self.metadata,
         }
+
+
+@dataclass
+class FormatRecoveryResult:
+    """Standardized result of a format-specific recovery and repair operation."""
+
+    format_name: str
+    is_recovered: bool
+    is_openable: bool
+    repaired_bytes: bytes
+    authentic_bytes: bytes = b""
+    authentic_bytes_count: int = 0
+    synthesized_bytes_count: int = 0
+    confidence_score: float = 0.0  # 0.0 to 100.0
+    category: RecoveryCategory = RecoveryCategory.CANDIDATE
+    validation: ValidationResult = field(
+        default_factory=lambda: ValidationResult(is_valid=False, format_name="unknown", integrity_score=0.0)
+    )
+    operations_performed: list[str] = field(default_factory=list)
+    unsupported_capabilities: list[str] = field(default_factory=list)
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+    salvaged_text: str = ""
+    extracted_items: list[dict[str, Any]] = field(default_factory=list)
+    preview_type: str = "none"  # "image", "pdf", "text", "archive", "video"
+    preview_data: str = ""  # Base64 string or display snippet
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "format_name": self.format_name,
+            "is_recovered": self.is_recovered,
+            "is_openable": self.is_openable,
+            "repaired_size_bytes": len(self.repaired_bytes),
+            "authentic_bytes_count": self.authentic_bytes_count,
+            "synthesized_bytes_count": self.synthesized_bytes_count,
+            "confidence_score": round(self.confidence_score, 1),
+            "category": self.category.value,
+            "is_valid": self.validation.is_valid,
+            "integrity_score": self.validation.integrity_score,
+            "validation_errors": list(self.validation.errors),
+            "validation_warnings": list(self.validation.warnings),
+            "operations_performed": self.operations_performed,
+            "unsupported_capabilities": self.unsupported_capabilities,
+            "diagnostics": self.diagnostics,
+            "salvaged_text": self.salvaged_text,
+            "extracted_items_count": len(self.extracted_items),
+            "extracted_items": self.extracted_items,
+            "preview_type": self.preview_type,
+            "metadata": self.metadata,
+        }
+

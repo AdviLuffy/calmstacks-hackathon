@@ -9,11 +9,11 @@ from typing import Sequence
 from pathlib import Path
 
 DEFAULT_MODEL_PREFERENCE = [
-    "gemini-3.8-flash",
     "gemini-3.5-flash-lite",
-    "gemini-3.1-pro-preview",
-    "gemini-3.1-flash-lite",
     "gemini-flash-latest",
+    "gemini-3.8-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-pro-latest",
 ]
 
 
@@ -43,6 +43,27 @@ def _load_env_file(skip_dotenv: bool = False) -> None:
                 pass
 
 
+DEFAULT_AI_PROVIDER = "local"
+SUPPORTED_AI_PROVIDERS = ("local", "gemini", "disabled")
+
+
+def is_cloud_ai_allowed(ai_provider: str, api_key: str) -> bool:
+    """Explicit cloud-AI safety gate.
+    
+    Cloud AI may ONLY execute when:
+    1. AI_PROVIDER is explicitly set to 'gemini'
+    2. A valid server-side credential exists
+    3. Not explicitly disabled by local/testing constraints
+    """
+    if ai_provider != "gemini":
+        return False
+    if not api_key:
+        return False
+    if os.environ.get("TRACE_FORCE_LOCAL") in ("1", "true", "yes"):
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class GeminiSettings:
     """Runtime settings for Gemini API integration."""
@@ -50,6 +71,7 @@ class GeminiSettings:
     enabled: bool
     api_key: str
     model_preference: tuple[str, ...]
+    ai_provider: str = DEFAULT_AI_PROVIDER
     max_retries_per_model: int = 2
     timeout_seconds: float = 30.0
     data_minimization: bool = True
@@ -57,22 +79,39 @@ class GeminiSettings:
 
 
 def load_gemini_settings(skip_dotenv: bool = False) -> GeminiSettings:
-    """Read Gemini configuration from environment variables (loading .env if present)."""
+    """Read Gemini configuration from environment variables (loading .env if present).
+    
+    TRACE is LOCAL-FIRST and CLOUD-OPTIONAL.
+    By default, AI_PROVIDER=local and cloud AI is gated off.
+    """
     _load_env_file(skip_dotenv=skip_dotenv)
 
-    # Check both GEMINI_... and TRACE_GEMINI_...
+    # 1. Determine active AI provider (Default is "local")
+    provider_env = os.environ.get("AI_PROVIDER") or os.environ.get("TRACE_AI_PROVIDER")
+    enable_env = os.environ.get("GEMINI_ENABLE") or os.environ.get("TRACE_GEMINI_ENABLE")
+
+    if provider_env:
+        ai_provider = provider_env.strip().lower()
+    elif enable_env is not None and enable_env.lower() in ("1", "true", "yes", "on"):
+        # Backward-compatible explicit enable
+        ai_provider = "gemini"
+    else:
+        ai_provider = DEFAULT_AI_PROVIDER
+
+    # 2. Check server-side credentials
     api_key = (
         os.environ.get("GEMINI_API_KEY")
         or os.environ.get("TRACE_GEMINI_API_KEY")
         or ""
     ).strip()
 
-    enable_env = os.environ.get("GEMINI_ENABLE") or os.environ.get("TRACE_GEMINI_ENABLE")
-    if enable_env is not None:
-        enabled = enable_env.lower() in ("1", "true", "yes", "on")
+    # 3. Apply Cloud-AI Safety Gate
+    if ai_provider in ("local", "disabled"):
+        enabled = False
+    elif enable_env is not None and enable_env.lower() in ("0", "false", "no", "off"):
+        enabled = False
     else:
-        # Enabled by default if API key is provided
-        enabled = bool(api_key)
+        enabled = is_cloud_ai_allowed(ai_provider, api_key)
 
     pref_env = os.environ.get("GEMINI_MODEL_PREFERENCE") or os.environ.get(
         "TRACE_GEMINI_MODEL_PREFERENCE"
@@ -86,4 +125,5 @@ def load_gemini_settings(skip_dotenv: bool = False) -> GeminiSettings:
         enabled=enabled,
         api_key=api_key,
         model_preference=tuple(models),
+        ai_provider=ai_provider,
     )

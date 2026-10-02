@@ -39,6 +39,7 @@ def test_public_pages_and_navigation(client: TestClient):
         assert 'href="/product"' in res.text
         assert 'href="/investigations"' in res.text
         assert 'href="/investigations/new"' in res.text
+        assert 'href="/benchmark"' in res.text
         assert 'href="/about"' in res.text
         assert 'href="/docs"' in res.text
 

@@ -3,7 +3,15 @@
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "evidence/**",
+          "trace/**",
+          "shared/**"
+        ],
+        "maxDuration": 60
+      }
     }
   ],
   "routes": [
@@ -16,6 +24,7 @@
     "TRACE_RECOVERY_ENGINE": "trace_evidence.engine:TraceEvidenceEngine",
     "TRACE_AI_ENGINE": "trace.intel.engine:TraceIntelligenceEngine",
     "TRACE_RECOVERY_MODE": "real",
-    "TRACE_AI_MODE": "real"
+    "TRACE_AI_MODE": "real",
+    "TRACE_PERSIST_SESSIONS": "false"
   }
 }

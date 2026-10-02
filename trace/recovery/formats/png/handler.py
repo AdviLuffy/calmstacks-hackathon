@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import base64
 import struct
-import zlib
 from typing import Any, Mapping, Sequence
+import zlib
 
 from trace.recovery.formats.base import BaseFormatHandler
-from trace.recovery.models import FormatConfidence, FragmentCandidate, ValidationResult
+from trace.recovery.models import (
+    FormatConfidence,
+    FormatRecoveryResult,
+    FragmentCandidate,
+    RecoveryCategory,
+    ValidationResult,
+)
 
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 _IEND_CRC = 0xAE426082
@@ -368,3 +375,176 @@ class PngFormatHandler(BaseFormatHandler):
             warnings=tuple(warnings),
             metadata=metadata,
         )
+
+    def repair_or_recover(
+        self, data: bytes, filename: str = "", **kwargs: Any
+    ) -> FormatRecoveryResult:
+        """Deeply analyze and deterministically repair corrupted PNG image data."""
+        if not data:
+            val = self.validate(b"")
+            return FormatRecoveryResult(
+                format_name=self.format_name,
+                is_recovered=False,
+                is_openable=False,
+                repaired_bytes=b"",
+                authentic_bytes=b"",
+                confidence_score=0.0,
+                category=RecoveryCategory.UNRECOVERABLE,
+                validation=val,
+                operations_performed=[],
+                unsupported_capabilities=["empty_input"],
+            )
+
+        operations: list[str] = []
+        authentic_bytes = data
+        repaired = bytearray(data)
+
+        # 1. Preamble stripping / Magic bytes repair
+        magic_idx = repaired.find(_PNG_MAGIC)
+        if magic_idx > 0:
+            repaired = repaired[magic_idx:]
+            operations.append(f"stripped_preamble_garbage_{magic_idx}_bytes")
+        elif magic_idx == -1:
+            ihdr_idx = repaired.find(b"IHDR")
+            if ihdr_idx != -1 and ihdr_idx >= 4:
+                # Prepend PNG magic
+                repaired = bytearray(_PNG_MAGIC) + repaired[ihdr_idx - 4:]
+                operations.append("synthesized_missing_png_signature")
+            elif ihdr_idx != -1:
+                # IHDR is right at offset 0
+                repaired = bytearray(_PNG_MAGIC + b"\x00\x00\x00\x0d") + repaired
+                operations.append("synthesized_missing_png_signature_and_ihdr_len")
+
+        # 2. Parse chunks, repair corrupted CRCs, and detect truncated chunks
+        offset = 8  # Skip magic
+        rebuilt_chunks = bytearray(_PNG_MAGIC)
+        has_ihdr = False
+        has_idat = False
+        has_iend = False
+        idat_count = 0
+
+        while offset < len(repaired):
+            if offset + 8 > len(repaired):
+                break
+            chunk_len = struct.unpack(">I", repaired[offset : offset + 4])[0]
+            chunk_type = bytes(repaired[offset + 4 : offset + 8])
+
+            # Check if chunk type is ASCII alpha
+            if not all(65 <= b <= 90 or 97 <= b <= 122 for b in chunk_type):
+                # Corrupted chunk marker; scan forward to next known marker
+                next_marker = -1
+                for known in (b"IHDR", b"PLTE", b"IDAT", b"IEND", b"tEXt", b"sRGB", b"gAMA"):
+                    pos = repaired.find(known, offset + 1)
+                    if pos != -1 and (next_marker == -1 or pos < next_marker):
+                        next_marker = pos
+                if next_marker != -1 and next_marker >= 4:
+                    offset = next_marker - 4
+                    operations.append("resynchronized_corrupted_chunk_boundary")
+                    continue
+                else:
+                    break
+
+            if chunk_type == b"IHDR":
+                has_ihdr = True
+            elif chunk_type == b"IDAT":
+                has_idat = True
+                idat_count += 1
+            elif chunk_type == b"IEND":
+                has_iend = True
+
+            data_start = offset + 8
+            data_end = data_start + chunk_len
+            if data_end > len(repaired):
+                # Truncated chunk data: salvage surviving portion
+                surviving_data = repaired[data_start:]
+                calc_crc = zlib.crc32(chunk_type + surviving_data) & 0xFFFFFFFF
+                rebuilt_chunks.extend(struct.pack(">I", len(surviving_data)))
+                rebuilt_chunks.extend(chunk_type)
+                rebuilt_chunks.extend(surviving_data)
+                rebuilt_chunks.extend(struct.pack(">I", calc_crc))
+                operations.append(f"salvaged_truncated_{chunk_type.decode('ascii', 'ignore')}_chunk")
+                offset = len(repaired)
+                break
+
+            chunk_data = repaired[data_start:data_end]
+            crc_bytes = repaired[data_end : data_end + 4] if data_end + 4 <= len(repaired) else b""
+            stored_crc = struct.unpack(">I", crc_bytes)[0] if len(crc_bytes) == 4 else None
+            calc_crc = zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
+
+            if stored_crc is None or stored_crc != calc_crc:
+                operations.append(f"recalculated_crc_{chunk_type.decode('ascii', 'ignore')}")
+
+            rebuilt_chunks.extend(struct.pack(">I", chunk_len))
+            rebuilt_chunks.extend(chunk_type)
+            rebuilt_chunks.extend(chunk_data)
+            rebuilt_chunks.extend(struct.pack(">I", calc_crc))
+
+            offset = data_end + 4
+            if chunk_type == b"IEND":
+                break
+
+        # 3. Synthesize missing IEND if needed
+        if not has_iend:
+            rebuilt_chunks.extend(b"\x00\x00\x00\x00IEND\xaeB`\x82")
+            operations.append("synthesized_missing_iend_chunk")
+
+        repaired_bytes = bytes(rebuilt_chunks)
+        val = self.validate(repaired_bytes)
+
+        # Test openability with PyMuPDF Pixmap
+        is_openable = False
+        width = 0
+        height = 0
+        channels = 0
+        try:
+            import pymupdf
+            pix = pymupdf.Pixmap(repaired_bytes)
+            if pix.width > 0 and pix.height > 0:
+                is_openable = True
+                width = pix.width
+                height = pix.height
+                channels = pix.n
+        except Exception:
+            is_openable = val.is_valid
+
+        synth_count = max(0, len(repaired_bytes) - len(authentic_bytes))
+        cat = (
+            RecoveryCategory.RECOVERED
+            if is_openable
+            else (RecoveryCategory.PARTIAL if has_ihdr else RecoveryCategory.UNRECOVERABLE)
+        )
+
+        preview_data = (
+            f"data:image/png;base64,{base64.b64encode(repaired_bytes).decode('ascii')}"
+            if is_openable
+            else ""
+        )
+
+        return FormatRecoveryResult(
+            format_name=self.format_name,
+            is_recovered=is_openable or val.is_valid,
+            is_openable=is_openable,
+            repaired_bytes=repaired_bytes,
+            authentic_bytes=authentic_bytes,
+            authentic_bytes_count=len(authentic_bytes),
+            synthesized_bytes_count=synth_count,
+            confidence_score=max(val.integrity_score * 100.0, 85.0 if is_openable else 20.0),
+            category=cat,
+            validation=val,
+            operations_performed=operations,
+            unsupported_capabilities=[
+                "interlaced_adam7_missing_pass_interpolation",
+                "deflate_window_corruption",
+            ],
+            diagnostics={
+                "width": width or val.metadata.get("width", 0),
+                "height": height or val.metadata.get("height", 0),
+                "channels": channels,
+                "has_ihdr": has_ihdr,
+                "has_idat": has_idat,
+                "idat_chunks_count": idat_count,
+            },
+            preview_type="image" if is_openable else "none",
+            preview_data=preview_data,
+        )
+

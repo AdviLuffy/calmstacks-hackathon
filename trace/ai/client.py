@@ -153,9 +153,8 @@ class ResilientGeminiClient:
 
                     if "quota" in err_str or "exhausted" in err_str:
                         attempt_info["status"] = "quota_exhausted"
-                        prov.error = f"API Quota exhausted: {exc}"
-                        prov.latency_ms = (time.time() - start_time) * 1000
-                        return AIResponse(success=False, provenance=prov)
+                        attempt_info["error"] = str(exc)
+                        break  # Fall back to next model in preference queue
 
                     # Check for rate limit / 429
                     if "429" in err_str or "rate limit" in err_str:

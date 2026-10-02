@@ -29,7 +29,12 @@ class GeminiForensicService:
 
     @property
     def is_available(self) -> bool:
-        return self.client.settings.enabled and bool(self.client.settings.api_key)
+        from trace.ai.config import is_cloud_ai_allowed
+        return (
+            self.client.settings.enabled
+            and bool(self.client.settings.api_key)
+            and is_cloud_ai_allowed(self.client.settings.ai_provider, self.client.settings.api_key)
+        )
 
     @staticmethod
     def calculate_entropy(data: bytes) -> float:
@@ -110,4 +115,27 @@ class GeminiForensicService:
     def test_connection(self) -> dict[str, Any]:
         """Test API connectivity using a minimal prompt without exposing secrets."""
         return self.client.test_connection()
+
+    def reconstruct_missing_pdf(
+        self,
+        raw_bytes: bytes,
+        media_bytes: bytes | None = None,
+        session_id: str = "",
+        case_id: str = "UNKNOWN-CASE",
+        unplaced_count: int = 0,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> Any:
+        """Run modular AI-assisted PDF reconstruction with deterministic fallback."""
+        from trace.ai.reconstruction import AIReconstructionEngine
+
+        engine = AIReconstructionEngine(
+            raw_bytes=raw_bytes,
+            media_bytes=media_bytes,
+            session_id=session_id,
+            case_id=case_id,
+            unplaced_count=unplaced_fragments_count if "unplaced_fragments_count" in locals() else unplaced_count,
+            metadata=dict(metadata) if metadata else None,
+            gemini_service=self,
+        )
+        return engine.reconstruct()
 

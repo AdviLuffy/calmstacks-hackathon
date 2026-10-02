@@ -1,0 +1,42 @@
+{
+  "summary": [
+    {
+      "model": "ForensicFragmentClassifier",
+      "split": "test",
+      "samples": 179,
+      "accuracy": 1.0,
+      "macro_f1": 1.0,
+      "weighted_f1": 1.0,
+      "abstention_rate": 0.0,
+      "latency_us": 32271.16
+    },
+    {
+      "model": "RuleBasedBaseline",
+      "split": "test",
+      "samples": 179,
+      "accuracy": 0.8994,
+      "macro_f1": 0.4157,
+      "weighted_f1": 0.9006,
+      "abstention_rate": 0.0,
+      "latency_us": 15.78
+    },
+    {
+      "model": "MajorityClassBaseline",
+      "split": "test",
+      "samples": 179,
+      "accuracy": 0.7263,
+      "macro_f1": 0.1402,
+      "weighted_f1": 0.6111,
+      "abstention_rate": 0.0,
+      "latency_us": 0.0
+    }
+  ],
+  "best_macro_f1": {
+    "model": "ForensicFragmentClassifier",
+    "score": 1.0
+  },
+  "best_accuracy": {
+    "model": "ForensicFragmentClassifier",
+    "score": 1.0
+  }
+}

@@ -9,7 +9,13 @@ import zipfile
 from typing import Any, Mapping, Sequence
 
 from trace.recovery.formats.base import BaseFormatHandler
-from trace.recovery.models import FormatConfidence, FragmentCandidate, ValidationResult
+from trace.recovery.models import (
+    FormatConfidence,
+    FormatRecoveryResult,
+    FragmentCandidate,
+    RecoveryCategory,
+    ValidationResult,
+)
 
 _PK_LOCAL = b"PK\x03\x04"
 _PK_CENTRAL = b"PK\x01\x02"
@@ -351,3 +357,206 @@ class ZipFormatHandler(BaseFormatHandler):
             warnings=tuple(warnings),
             metadata=metadata,
         )
+
+    def repair_or_recover(
+        self, data: bytes, filename: str = "", **kwargs: Any
+    ) -> FormatRecoveryResult:
+        """Deeply analyze and deterministically repair corrupted ZIP archive data."""
+        if not data:
+            val = self.validate(b"")
+            return FormatRecoveryResult(
+                format_name=self.format_name,
+                is_recovered=False,
+                is_openable=False,
+                repaired_bytes=b"",
+                authentic_bytes=b"",
+                confidence_score=0.0,
+                category=RecoveryCategory.UNRECOVERABLE,
+                validation=val,
+                operations_performed=[],
+                unsupported_capabilities=["empty_input"],
+            )
+
+        operations: list[str] = []
+        authentic_bytes = data
+        repaired = bytearray(data)
+
+        # 1. Preamble stripping: find first PK\x03\x04
+        pk_idx = repaired.find(_PK_LOCAL)
+        if pk_idx > 0:
+            repaired = repaired[pk_idx:]
+            operations.append(f"stripped_preamble_garbage_{pk_idx}_bytes")
+
+        # 2. Check if Central Directory & EOCD exist
+        eocd_idx = repaired.rfind(_PK_EOCD)
+        needs_cd_rebuild = (eocd_idx == -1)
+
+        # Test if standard zipfile can open it
+        try:
+            with zipfile.ZipFile(io.BytesIO(repaired)) as zf:
+                if len(zf.namelist()) == 0:
+                    needs_cd_rebuild = True
+        except Exception:
+            needs_cd_rebuild = True
+
+        extracted_items: list[dict[str, Any]] = []
+        salvaged_text_parts: list[str] = []
+
+        if needs_cd_rebuild:
+            # Reconstruct Central Directory from Local File Headers (PK\x03\x04)
+            cd_entries = bytearray()
+            entry_count = 0
+            offset = 0
+
+            while offset < len(repaired):
+                loc = repaired.find(_PK_LOCAL, offset)
+                if loc == -1 or loc + 30 > len(repaired):
+                    break
+
+                try:
+                    (
+                        sig,
+                        ver,
+                        flags,
+                        method,
+                        mod_time,
+                        mod_date,
+                        crc32_val,
+                        comp_size,
+                        uncomp_size,
+                        fname_len,
+                        extra_len,
+                    ) = struct.unpack("<4sHHHHHIIIHH", repaired[loc : loc + 30])
+                except struct.error:
+                    break
+
+                name_start = loc + 30
+                name_end = name_start + fname_len
+                if name_end > len(repaired):
+                    break
+                fname = repaired[name_start:name_end].decode("utf-8", errors="replace")
+
+                data_start = name_end + extra_len
+                next_loc = repaired.find(_PK_LOCAL, data_start)
+                if comp_size == 0 and next_loc != -1:
+                    inferred_comp = next_loc - data_start
+                elif comp_size == 0:
+                    inferred_comp = max(0, len(repaired) - data_start)
+                else:
+                    inferred_comp = comp_size
+
+                # Build Central Directory Record (PK\x01\x02)
+                cd_header = struct.pack(
+                    "<4sHHHHHHIIIHHHHHII",
+                    _PK_CENTRAL,
+                    ver,
+                    ver,
+                    flags,
+                    method,
+                    mod_time,
+                    mod_date,
+                    crc32_val,
+                    inferred_comp,
+                    uncomp_size or inferred_comp,
+                    fname_len,
+                    0,  # extra field length
+                    0,  # file comment length
+                    0,  # disk number start
+                    0,  # internal file attributes
+                    0,  # external file attributes
+                    loc,  # relative offset of local header
+                )
+                cd_entries.extend(cd_header)
+                cd_entries.extend(repaired[name_start:name_end])
+                entry_count += 1
+
+                offset = data_start + inferred_comp
+
+            if entry_count > 0:
+                cd_offset = len(repaired)
+                cd_size = len(cd_entries)
+                eocd = struct.pack(
+                    "<4sHHHHIIH",
+                    _PK_EOCD,
+                    0,
+                    0,
+                    entry_count,
+                    entry_count,
+                    cd_size,
+                    cd_offset,
+                    0,
+                )
+                repaired.extend(cd_entries)
+                repaired.extend(eocd)
+                operations.append(f"reconstructed_central_directory_with_{entry_count}_entries")
+
+        repaired_bytes = bytes(repaired)
+        val = self.validate(repaired_bytes)
+
+        # Test extraction of entries
+        is_openable = False
+        try:
+            with zipfile.ZipFile(io.BytesIO(repaired_bytes)) as zf:
+                is_openable = True
+                for info in zf.infolist():
+                    if ".." in info.filename or info.filename.startswith(("/", "\\")):
+                        operations.append(f"quarantined_zip_slip_entry_{info.filename}")
+                        extracted_items.append({
+                            "name": info.filename,
+                            "size_bytes": info.file_size,
+                            "compressed_size": info.compress_size,
+                            "status": "QUARANTINED",
+                        })
+                        continue
+
+                    status = "DAMAGED"
+                    try:
+                        content = zf.read(info.filename)
+                        status = "INTACT"
+                        if info.filename.lower().endswith((".txt", ".json", ".csv", ".xml", ".log", ".md")):
+                            snippet = content.decode("utf-8", errors="replace")[:1000]
+                            salvaged_text_parts.append(f"--- {info.filename} ---\n{snippet}")
+                    except Exception:
+                        pass
+                    extracted_items.append({
+                        "name": info.filename,
+                        "size_bytes": info.file_size,
+                        "compressed_size": info.compress_size,
+                        "status": status,
+                    })
+        except Exception:
+            is_openable = False
+
+        synth_count = max(0, len(repaired_bytes) - len(authentic_bytes))
+        cat = (
+            RecoveryCategory.RECOVERED
+            if (is_openable and all(e["status"] == "INTACT" for e in extracted_items))
+            else (RecoveryCategory.PARTIAL if is_openable else RecoveryCategory.UNRECOVERABLE)
+        )
+
+        return FormatRecoveryResult(
+            format_name=self.format_name,
+            is_recovered=is_openable,
+            is_openable=is_openable,
+            repaired_bytes=repaired_bytes,
+            authentic_bytes=authentic_bytes,
+            authentic_bytes_count=len(authentic_bytes),
+            synthesized_bytes_count=synth_count,
+            confidence_score=max(val.integrity_score * 100.0, 90.0 if is_openable else 15.0),
+            category=cat,
+            validation=val,
+            operations_performed=operations,
+            unsupported_capabilities=[
+                "multidisk_spanned_zip_volume_recovery",
+                "aes256_strong_encryption_key_recovery",
+            ],
+            diagnostics={
+                "entries_count": len(extracted_items),
+                "intact_entries": sum(1 for e in extracted_items if e["status"] == "INTACT"),
+                "damaged_entries": sum(1 for e in extracted_items if e["status"] == "DAMAGED"),
+            },
+            salvaged_text="\n\n".join(salvaged_text_parts),
+            extracted_items=extracted_items,
+            preview_type="archive" if is_openable else "none",
+        )
+

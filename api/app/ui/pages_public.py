@@ -22,13 +22,15 @@ def home_page() -> str:
       <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2.5rem;">
         <a href="/investigations" class="btn btn-primary" style="padding: 0.75rem 1.5rem; font-size: 12px;">Open Investigations Workspace</a>
         <a href="/investigations/new" class="btn btn-secondary" style="padding: 0.75rem 1.5rem; font-size: 12px;">+ Ingest New Evidence</a>
-        <a href="/product" class="btn btn-ghost" style="padding: 0.75rem 1.5rem; font-size: 12px;">Explore Forensic Architecture &rarr;</a>
+        <a href="/benchmark" class="btn btn-secondary" style="padding: 0.75rem 1.5rem; font-size: 12px;"><span class="tag tag-copper" style="margin-right: 4px;">P10</span> Dataset Benchmarks</a>
+        <a href="/product" class="btn btn-ghost" style="padding: 0.75rem 1.5rem; font-size: 12px;">Explore Architecture &rarr;</a>
       </div>
 
       <div style="display: flex; gap: 2rem; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); border-top: 1px solid var(--border-subtle); padding-top: 1.25rem;">
         <div><span style="color: var(--accent-copper); font-weight: 700;">[P1]</span> Authentic Byte Carver</div>
         <div><span style="color: var(--accent-cyan); font-weight: 700;">[P2]</span> M0 Frozen Contract</div>
         <div><span style="color: var(--accent-green); font-weight: 700;">[P3]</span> Grounded Intelligence API</div>
+        <div><span style="color: var(--accent-copper); font-weight: 700;">[P10]</span> Real-World Benchmark</div>
         <div><span style="color: var(--text-primary); font-weight: 700;">ISO/IEC 27037</span> Compliant</div>
       </div>
     </div>

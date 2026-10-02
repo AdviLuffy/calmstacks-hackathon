@@ -361,7 +361,7 @@ def test_4missing_fixture_and_repair_action(integrated_client):
     r_page = integrated_client.get(f"/investigations/{session_id}")
     assert r_page.status_code == 200
     page_html = r_page.text
-    assert "SYNTHETIC REPAIR (DEMO)" in page_html
+    assert "DETERMINISTIC REPAIR" in page_html or "SYNTHETIC REPAIR" in page_html
     # Case badges separate PIPELINE from RECOVERY
     assert "PIPELINE: PROCESSED" in page_html
 

@@ -397,6 +397,8 @@ class FileSessionStore(InMemorySessionStore):
         errors: list[str] = []
         damaged: dict[str, str] = {}
         for path in sorted(self.root.glob("*.json")):
+            if path.name.endswith("_ai_reconstruction.json") or path.name.endswith(".tmp"):
+                continue
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
                 record = deserialize_session(payload)

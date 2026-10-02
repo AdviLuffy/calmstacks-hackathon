@@ -362,3 +362,59 @@ def test_api_repair_and_download_flow():
     import pypdf
     reader = pypdf.PdfReader(io.BytesIO(dl_resp.content))
     assert len(reader.pages) >= 1
+
+
+def test_test111_full_evidence_recovery_telemetry():
+    """Verify Phase 1 requirements on 105-block TEST-111 evidence:
+    - Analyzes complete original evidence
+    - Extracts indirect objects, streams, text strings, and pages
+    - Tracks provenance, offsets, and authentic recovery metrics
+    - Validates resulting PDF parser status
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    ev_path = repo_root / "evidence" / "datasets" / "evidence" / "reconstructed_repaired_105block.pdf"
+    if not ev_path.is_file():
+        pytest.skip(f"Evidence file not found: {ev_path}")
+
+    data = ev_path.read_bytes()
+    eng = GeneralizedPdfRecoveryEngine(raw_bytes=data[:512], media_bytes=data)
+    rebuilt_pdf, synth_items, meta = eng.recover()
+
+    # 1. Telemetry verification
+    tel = eng.telemetry
+    assert tel is not None
+    assert tel.original_evidence_size == len(data)
+    assert tel.authentic_bytes_identified >= 24000
+    assert tel.authentic_recovery_percentage >= 95.0
+    assert tel.indirect_objects_found == 22
+    assert tel.validated_objects == 22
+    assert tel.streams_found == 8
+    assert tel.text_fragments_recovered >= 200
+    assert tel.pages_discovered == 8
+    assert tel.placed_objects_count == 22
+    assert tel.parser_status["is_openable"] is True
+    assert tel.parser_status["page_count"] == 8
+
+    # 2. Provenance tracking verification
+    assert len(eng.provenance) >= 23
+    auth_prov = [p for p in eng.provenance if p["type"] == "original_recovered"]
+    synth_prov = [p for p in eng.provenance if p["type"] == "synthesized_repair"]
+    assert len(auth_prov) == 22
+    assert len(synth_prov) >= 1
+    for p in auth_prov:
+        assert p["confidence"] == 1.0
+        assert p["media_offset_start"] is not None
+        assert p["media_offset_end"] is not None
+        assert p["origin"] == "authentic_evidence"
+
+    # 3. FlateDecode decompression test on reference_original.pdf
+    flate_path = repo_root / "evidence" / "datasets" / "groundtruth" / "reference_original.pdf"
+    if flate_path.is_file():
+        flate_data = flate_path.read_bytes()
+        flate_eng = GeneralizedPdfRecoveryEngine(raw_bytes=b"", media_bytes=flate_data)
+        _, _, flate_meta = flate_eng.recover()
+        flate_tel = flate_eng.telemetry
+        assert flate_tel is not None
+        assert flate_tel.successfully_decompressed_streams >= 1
+        assert flate_tel.text_fragments_recovered >= 5
+
