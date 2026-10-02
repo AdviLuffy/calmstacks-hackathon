@@ -20,6 +20,7 @@ def render_header(active_route: str = "") -> str:
         ("/product", "product", "Product"),
         ("/investigations", "investigations", "Investigations"),
         ("/investigations/new", "new_analysis", "New Analysis"),
+        ("/benchmark", "benchmark", "Benchmarks"),
         ("/about", "about", "About"),
     ]
 
@@ -107,6 +108,7 @@ def render_footer() -> str:
           <ul class="footer-col-links">
             <li><a href="/investigations">Investigations Workspace</a></li>
             <li><a href="/investigations/new">New Evidence Analysis</a></li>
+            <li><a href="/benchmark">Dataset Benchmarks</a></li>
             <li><a href="/product">Forensic Pipeline Architecture</a></li>
             <li><a href="/docs" target="_blank">FastAPI Schema &amp; Endpoints</a></li>
           </ul>

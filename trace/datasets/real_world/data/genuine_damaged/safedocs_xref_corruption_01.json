@@ -1,0 +1,19 @@
+{
+  "sample_id": "safedocs_xref_corruption_01",
+  "source_name": "PDF Association SafeDocs Issue Corpus",
+  "source_url": "https://github.com/pdf-association/safedocs",
+  "license_type": "SAFEDOCS_RESEARCH",
+  "license_url": "https://github.com/pdf-association/safedocs/blob/main/LICENSE",
+  "sha256": "14fb9ca5c9000debc53fd4b1da6b9bd0e61f0e67d40f3110d9cc03aa040dc7aa",
+  "file_size_bytes": 393,
+  "has_verified_ground_truth": false,
+  "associated_original_sha256": null,
+  "observed_damage_classes": [
+    "DESTROYED_CROSS_REFERENCE_TABLE",
+    "MISSING_TRAILER_DICT"
+  ],
+  "safety_warnings": [
+    "Untrusted research test bitstream — static parsing only, no active script execution"
+  ],
+  "notes": "Corrupted xref table offset with intact body object streams."
+}

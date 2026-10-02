@@ -43,6 +43,7 @@ from app.routers.dashboard_ui import (
     PRIVACY_HTML,
     TERMS_HTML,
     about_page,
+    benchmark_page,
     bundle_page,
     evidence_explorer_page,
     home_page,
@@ -170,10 +171,12 @@ def create_app(
     application.state.api_warnings = api_warnings(resolved_settings, resolved_store)
 
     if resolved_settings.cors_origins:
+        origins = list(resolved_settings.cors_origins)
+        allow_creds = "*" not in origins
         application.add_middleware(
             CORSMiddleware,
-            allow_origins=list(resolved_settings.cors_origins),
-            allow_credentials=True,
+            allow_origins=origins,
+            allow_credentials=allow_creds,
             allow_methods=["GET", "POST", "OPTIONS"],
             allow_headers=["*"],
         )
@@ -236,6 +239,12 @@ def create_app(
     @application.get("/investigations/{session_id}/bundle", response_class=HTMLResponse, include_in_schema=False)
     def serve_bundle(session_id: str) -> HTMLResponse:
         return HTMLResponse(content=bundle_page(session_id))
+
+    # Real-World Benchmarking UI routes (Phase 10)
+    @application.get("/benchmark", response_class=HTMLResponse, include_in_schema=False)
+    @application.get("/benchmarks", response_class=HTMLResponse, include_in_schema=False)
+    def serve_benchmark() -> HTMLResponse:
+        return HTMLResponse(content=benchmark_page())
 
     # Favicon routes
     @application.get("/favicon.svg", include_in_schema=False)

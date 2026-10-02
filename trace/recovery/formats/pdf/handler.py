@@ -264,6 +264,20 @@ class PdfFormatHandler(BaseFormatHandler):
 
         is_valid = ("header_magic" in checks_passed) and ("eof_marker" in checks_passed) and ("pdf_objects" in checks_passed)
 
+        meta_dict: dict[str, Any] = {
+            "pdf_version": version,
+            "objects_found": len(obj_matches),
+            "size_bytes": len(data),
+        }
+        try:
+            from trace_evidence.pdf_recovery import diagnose_pdf_corruption
+            diag = diagnose_pdf_corruption(data)
+            meta_dict["diagnostic"] = diag.to_dict()
+            meta_dict["corruption_classes"] = list(diag.corruption_classes)
+            meta_dict["salvaged_pages_count"] = diag.salvaged_pages_count
+        except Exception:
+            pass
+
         return ValidationResult(
             is_valid=is_valid,
             format_name=self.format_name,
@@ -272,5 +286,18 @@ class PdfFormatHandler(BaseFormatHandler):
             checks_failed=tuple(checks_failed),
             errors=tuple(errors),
             warnings=tuple(warnings),
-            metadata={"pdf_version": version, "objects_found": len(obj_matches), "size_bytes": len(data)},
+            metadata=meta_dict,
         )
+
+    def repair(self, data: bytes, media_bytes: bytes | None = None) -> tuple[bytes, dict[str, Any]]:
+        """Perform autonomous generalized PDF forensic repair."""
+        try:
+            from trace_evidence.pdf_recovery import GeneralizedPdfRecoveryEngine, diagnose_pdf_corruption
+            engine = GeneralizedPdfRecoveryEngine(raw_bytes=data, media_bytes=media_bytes)
+            repaired_bytes, synth_items, meta = engine.recover()
+            diag = diagnose_pdf_corruption(media_bytes if media_bytes else data)
+            meta["diagnostic"] = diag.to_dict()
+            meta["synthesized_elements"] = synth_items
+            return repaired_bytes, meta
+        except Exception as e:
+            return data, {"error": str(e)}

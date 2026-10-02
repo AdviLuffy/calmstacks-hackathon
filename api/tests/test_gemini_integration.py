@@ -123,6 +123,7 @@ def test_ai_test_connection_endpoint_unconfigured(integrated_client: TestClient,
 
 def test_ai_test_connection_endpoint_success_with_mock(integrated_client: TestClient, monkeypatch):
     """Verify test-connection endpoint succeeds with mock client and does not leak keys."""
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
     monkeypatch.setenv("GEMINI_API_KEY", "test-mock-key-valid")
 
     mock_client = MockGeminiClient()
@@ -139,6 +140,7 @@ def test_ai_test_connection_endpoint_success_with_mock(integrated_client: TestCl
 
 def test_ai_test_connection_endpoint_auth_error_with_mock(integrated_client: TestClient, monkeypatch):
     """Verify test-connection endpoint handles auth error gracefully."""
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
     monkeypatch.setenv("GEMINI_API_KEY", "test-mock-invalid-key")
 
     mock_client = MockGeminiClient(auth_error=True)
@@ -200,6 +202,7 @@ def test_quota_exhausted_handling():
 
 def test_session_ai_analysis_endpoint_with_mock(integrated_client: TestClient, monkeypatch):
     """Verify GET /api/sessions/{session_id}/ai-analysis generates structured findings with provenance."""
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
     monkeypatch.setenv("GEMINI_API_KEY", "test-mock-key-valid")
 
     # 1. Carve a session

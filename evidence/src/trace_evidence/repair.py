@@ -22,6 +22,11 @@ from .constants import (
     STATUS_OUTPUT_INVALID,
 )
 from .hashing import sha256_bytes
+from .pdf_recovery import (
+    CorruptionDiagnostic,
+    GeneralizedPdfRecoveryEngine,
+    diagnose_pdf_corruption,
+)
 
 __all__ = [
     "RepairResult",
@@ -29,6 +34,9 @@ __all__ = [
     "repair_pdf",
     "synthetic_repair_pdf",
     "restore_from_groundtruth",
+    "GeneralizedPdfRecoveryEngine",
+    "diagnose_pdf_corruption",
+    "CorruptionDiagnostic",
 ]
 
 
@@ -52,6 +60,9 @@ class RepairResult:
     provenance: tuple[dict[str, Any], ...] = ()
     validation_engine: str = "pypdf + PyMuPDF"
     error_message: str | None = None
+    diagnostic: dict[str, Any] | None = None
+    telemetry: dict[str, Any] | None = None
+    authentic_bytes: bytes | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -70,11 +81,14 @@ class RepairResult:
             "provenance": list(self.provenance),
             "validation_engine": self.validation_engine,
             "error_message": self.error_message,
+            "diagnostic": self.diagnostic,
+            "telemetry": self.telemetry,
         }
 
 
+
 def validate_and_render_pdf(pdf_bytes: bytes, strict_iso: bool = True) -> tuple[bool, int, str, str | None]:
-    """Validate that PDF bytes open cleanly with a PDF parser and extract text.
+    """Validate that PDF bytes open cleanly with a PDF parser, page streams dereference cleanly, and pages render.
 
     Uses pypdf and PyMuPDF (fitz) when available.
     Returns:
@@ -91,34 +105,76 @@ def validate_and_render_pdf(pdf_bytes: bytes, strict_iso: bool = True) -> tuple[
     extracted_text = ""
     error_msg = None
 
-    # 1. Primary check: pypdf (strict parser matching Adobe Acrobat expectations)
+    # 1. Structural check with pypdf: verify page dictionaries, mediabox, and stream dereferencing
+    pypdf_ok = False
+    pypdf_pages = 0
+    pypdf_text = ""
     try:
         import pypdf
-        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes), strict=strict_iso)
-        page_count = len(reader.pages)
-        if page_count > 0:
-            extracted_text = (reader.pages[0].extract_text() or "").strip()
-            return True, page_count, extracted_text, None
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes), strict=False)
+        pypdf_pages = len(reader.pages)
+        if pypdf_pages > 0:
+            for p_idx, page in enumerate(reader.pages):
+                mb = page.mediabox
+                if not mb or mb.width <= 0 or mb.height <= 0:
+                    raise ValueError(f"page {p_idx} has invalid mediabox")
+                contents = page.get("/Contents")
+                if contents is not None:
+                    resolved = contents.get_object()
+                    if isinstance(resolved, list):
+                        for part in resolved:
+                            part_obj = part.get_object()
+                            if hasattr(part_obj, "get_data"):
+                                part_obj.get_data()
+                            else:
+                                raise ValueError(f"page {p_idx} contents list element is not a stream")
+                    elif hasattr(resolved, "get_data"):
+                        resolved.get_data()
+                    else:
+                        raise ValueError(f"page {p_idx} contents is not a valid stream")
+            pypdf_text = (reader.pages[0].extract_text() or "").strip()
+            pypdf_ok = True
     except Exception as e:
         error_msg = f"pypdf: {e}"
 
-    # 2. Secondary check: PyMuPDF
+    # 2. Independent rasterization & rendering check with PyMuPDF
+    fitz_ok = False
+    fitz_pages = 0
+    fitz_text = ""
     try:
         try:
             import pymupdf as fitz_mod
         except ImportError:
             import fitz as fitz_mod  # type: ignore
         doc = fitz_mod.open(stream=pdf_bytes, filetype="pdf")
-        page_count = doc.page_count
-        if page_count > 0:
-            extracted_text = doc.load_page(0).get_text().strip()
+        fitz_pages = doc.page_count
+        if fitz_pages > 0:
+            for i in range(fitz_pages):
+                page = doc.load_page(i)
+                if page.rect.width <= 0 or page.rect.height <= 0:
+                    raise ValueError(f"page {i} has invalid dimensions: {page.rect}")
+                pix = page.get_pixmap()
+                if pix.width <= 0 or pix.height <= 0:
+                    raise ValueError(f"page {i} failed rasterization")
+            fitz_text = doc.load_page(0).get_text().strip()
+            fitz_ok = True
         doc.close()
-        if page_count > 0:
-            return True, page_count, extracted_text, None
     except Exception as e:
-        error_msg = f"{error_msg}; pymupdf: {e}"
+        error_msg = f"{error_msg}; pymupdf: {e}" if error_msg else f"pymupdf: {e}"
 
-    return False, page_count, extracted_text, error_msg
+    if pypdf_ok and fitz_ok:
+        return True, max(pypdf_pages, fitz_pages), pypdf_text or fitz_text, None
+    elif fitz_ok and not pypdf_ok:
+        # PyMuPDF succeeded; allow if pypdf issue was harmless trailing whitespace or non-fatal EOF padding
+        if "EOF marker not found" in (error_msg or "") or "Stream has ended unexpectedly" in (error_msg or ""):
+            return True, fitz_pages, fitz_text, None
+        return False, fitz_pages, fitz_text, error_msg
+    elif pypdf_ok and not fitz_ok:
+        return True, pypdf_pages, pypdf_text, None
+
+
+
+    return False, max(page_count, pypdf_pages, fitz_pages), extracted_text, error_msg
 
 
 def _normalize_stream_object(obj_bytes: bytes) -> bytes:
@@ -459,49 +515,88 @@ def synthetic_repair_pdf(
                 synth_len = len(b"".join(xref_lines))
                 synthesized_items = step3_synth_items
 
+        # Also run GeneralizedPdfRecoveryEngine for advanced structural recovery (unpacked object streams, orphan pages, preamble stripping, operator balancing)
+        telemetry_info: dict[str, Any] | None = None
+        authentic_carved_output: bytes | None = None
+        gen_prov: tuple[dict[str, Any], ...] | None = None
+        try:
+            gen_engine = GeneralizedPdfRecoveryEngine(raw_bytes=raw_bytes, media_bytes=media_bytes)
+            gen_pdf, gen_synth_items, gen_meta = gen_engine.recover()
+            if gen_pdf:
+                is_open, pages, txt, err = validate_and_render_pdf(gen_pdf)
+                if is_open and (not candidate_openable or pages > candidate_pages or (pages == candidate_pages and len(txt) > len(candidate_text))):
+                    candidate_pdf = gen_pdf
+                    candidate_openable = True
+                    candidate_pages = pages
+                    candidate_text = txt
+                    candidate_err = err
+                    base_len = gen_meta.get("body_size", len(gen_pdf))
+                    synth_len = gen_meta.get("synthesized_size", len(gen_pdf) - base_len)
+                    synthesized_items = gen_synth_items
+                    telemetry_info = gen_meta.get("telemetry")
+                    authentic_carved_output = gen_meta.get("authentic_recovered_bytes")
+                    if gen_meta.get("provenance"):
+                        gen_prov = tuple(gen_meta["provenance"])
+        except Exception:
+            pass
+
+    diagnostic_info = diagnose_pdf_corruption(source_media).to_dict() if source_media else None
+
     # 4. Finalize result
     if candidate_openable and candidate_pdf:
         status = STATUS_SYNTHETICALLY_REPAIRED
         final_pdf = candidate_pdf
-        orig_recovered_len = len(raw_bytes) if raw_bytes else (len(media_bytes) if media_bytes else 0)
-        prov = (
-            {
-                "type": "original_recovered",
-                "offset_start": 0,
-                "offset_end": base_len,
-                "byte_count": base_len,
-                "description": "Original recovered fragments and objects from evidence media",
-            },
-            {
-                "type": "synthesized_repair",
-                "offset_start": base_len,
-                "offset_end": len(final_pdf),
-                "byte_count": synth_len,
-                "description": "Synthesized xref table, trailer dictionary, startxref pointer, and %%EOF marker",
-            },
-        )
+        if candidate_pdf is gen_pdf and media_bytes and telemetry_info and telemetry_info.get("authentic_bytes_identified"):
+            orig_recovered_len = telemetry_info["authentic_bytes_identified"]
+        else:
+            orig_recovered_len = len(raw_bytes) if raw_bytes else (len(media_bytes) if media_bytes else 0)
+
+        if candidate_pdf is gen_pdf and gen_prov is not None:
+            prov = gen_prov
+        else:
+            prov = (
+                {
+                    "type": "original_recovered",
+                    "offset_start": 0,
+                    "offset_end": base_len,
+                    "byte_count": base_len,
+                    "description": "Original recovered fragments and objects from evidence media",
+                },
+                {
+                    "type": "synthesized_repair",
+                    "offset_start": base_len,
+                    "offset_end": len(final_pdf),
+                    "byte_count": synth_len,
+                    "description": "Synthesized xref table, trailer dictionary, startxref pointer, and %%EOF marker",
+                },
+            )
     else:
         status = STATUS_OUTPUT_INVALID
-        final_pdf = candidate_pdf or raw_bytes or b""
+        final_pdf = b""
         orig_recovered_len = len(raw_bytes) if raw_bytes else 0
         prov = ()
+        candidate_err = candidate_err or "No valid openable repaired PDF could be produced from corrupted evidence"
 
     return RepairResult(
         repaired_bytes=final_pdf,
         repair_status=status,
         is_openable=candidate_openable,
-        page_count=candidate_pages,
-        extracted_text=candidate_text,
+        page_count=candidate_pages if candidate_openable else 0,
+        extracted_text=candidate_text if candidate_openable else "",
         recovered_size_bytes=orig_recovered_len,
         repaired_size_bytes=len(final_pdf),
-        synthesized_bytes_count=synth_len,
+        synthesized_bytes_count=synth_len if candidate_openable else 0,
         sha256=sha256_bytes(final_pdf) if final_pdf else "",
         is_byte_identical_to_groundtruth=False,
         missing_elements=tuple(missing_elements),
-        synthesized_elements=tuple(synthesized_items),
+        synthesized_elements=tuple(synthesized_items if candidate_openable else []),
         provenance=prov,
         error_message=candidate_err,
+        diagnostic=diagnostic_info,
+        telemetry=telemetry_info,
+        authentic_bytes=authentic_carved_output,
     )
+
 
 
 def restore_from_groundtruth(

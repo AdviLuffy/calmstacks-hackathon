@@ -18,6 +18,7 @@ from app.ui.pages_app import (
     new_analysis_page,
     provenance_page,
 )
+from app.ui.benchmark_ui import benchmark_page
 
 # Backwards-compatible constants for main.py and tests
 DASHBOARD_HTML = home_page()
@@ -30,6 +31,7 @@ __all__ = [
     "PRIVACY_HTML",
     "TERMS_HTML",
     "about_page",
+    "benchmark_page",
     "bundle_page",
     "evidence_explorer_page",
     "home_page",
@@ -41,3 +43,4 @@ __all__ = [
     "provenance_page",
     "terms_page",
 ]
+

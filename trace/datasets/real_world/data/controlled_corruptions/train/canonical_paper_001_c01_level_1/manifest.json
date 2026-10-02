@@ -1,0 +1,33 @@
+{
+  "dataset_version": "1.0",
+  "sample_id": "canonical_paper_001_c01_level_1",
+  "source_sha256": "e0216c99915f5fae84a62a6483f6c5041bfd6531636cd6ec31b5de4a560fa03e",
+  "corrupted_sha256": "9959594e53c252b362874c966712532164991c92266a8287d801be7f9aefb4b2",
+  "source_length": 2584,
+  "corrupted_length": 2514,
+  "seed": 1017,
+  "source_format": "pdf",
+  "severity_level": 1,
+  "operations": [
+    {
+      "operation_id": "17f72afa",
+      "type": "remove_text_operators",
+      "object_id": null,
+      "page": null,
+      "offset_start": 951,
+      "offset_end": 1021,
+      "original_length": 70,
+      "corrupted_length": 0,
+      "severity": 0.5,
+      "recoverability": "unrecoverable_without_external_redundancy",
+      "reversible": false,
+      "details": {
+        "removed_operators_count": 1
+      }
+    }
+  ],
+  "provenance": "SYNTHETIC_GROUND_TRUTH",
+  "metadata": {
+    "operation_count": 1
+  }
+}

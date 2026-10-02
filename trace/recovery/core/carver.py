@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import re
+import struct
 from typing import Sequence
 
 from trace.recovery.formats.base import BaseFormatHandler
+from trace.recovery.formats.docx.handler import DocxFormatHandler
 from trace.recovery.formats.jpeg.handler import JpegFormatHandler
+from trace.recovery.formats.mp4.handler import Mp4FormatHandler
 from trace.recovery.formats.pdf.handler import PdfFormatHandler
 from trace.recovery.formats.png.handler import PngFormatHandler
 from trace.recovery.formats.text.handler import TextFormatHandler
@@ -30,7 +33,9 @@ class MultiFormatCarver:
                 PdfFormatHandler(),
                 PngFormatHandler(),
                 JpegFormatHandler(),
+                DocxFormatHandler(),
                 ZipFormatHandler(),
+                Mp4FormatHandler(),
                 TextFormatHandler(),
             ]
         )
@@ -224,6 +229,70 @@ class MultiFormatCarver:
                     offset = end
                     continue
             offset = start + 4
+
+        # 5. Carve MP4 videos: ftyp ... moov / mdat
+        offset = 0
+        while len(artifacts) < max_artifacts:
+            ftyp_idx = stream.find(b"ftyp", offset)
+            if ftyp_idx == -1 or ftyp_idx < 4:
+                break
+            start = ftyp_idx - 4
+            mp4_handler = Mp4FormatHandler()
+            box_pos = start
+            last_valid = start
+
+            while box_pos < len(stream) - 8:
+                try:
+                    (bsize,) = struct.unpack(">I", stream[box_pos : box_pos + 4])
+                    btype = stream[box_pos + 4 : box_pos + 8]
+                except Exception:
+                    break
+
+                if bsize == 1 and box_pos + 16 <= len(stream):
+                    try:
+                        (bsize,) = struct.unpack(">Q", stream[box_pos + 8 : box_pos + 16])
+                    except Exception:
+                        break
+
+                if bsize == 0 or bsize > len(stream) - box_pos:
+                    box_pos = len(stream)
+                    last_valid = box_pos
+                    break
+
+                if bsize < 8:
+                    break
+
+                box_pos += bsize
+                last_valid = box_pos
+                if btype == b"moov" and b"mdat" in stream[start:box_pos]:
+                    break
+
+            if last_valid > start + 32:
+                candidate = stream[start:last_valid]
+                val = mp4_handler.validate(candidate)
+                if val.is_valid or val.integrity_score >= 0.5:
+                    cat = RecoveryCategory.RECOVERED if val.is_valid else RecoveryCategory.PARTIAL
+                    artifacts.append(
+                        RecoveredArtifact(
+                            artifact_id=f"CARVE-MP4-{len(artifacts) + 1:03d}",
+                            filename=f"carved_{start:08x}.mp4",
+                            format_name="mp4",
+                            mime_type="video/mp4",
+                            size_bytes=len(candidate),
+                            sha256="",
+                            category=cat,
+                            confidence_score=val.integrity_score * 100.0,
+                            format_confidence=val.integrity_score * 100.0,
+                            raw_bytes=candidate,
+                            validation=val,
+                            reconstruction_method="signature_carve",
+                            explanation=f"Carved MP4 video container from byte offset {start} to {last_valid}",
+                            metadata={"source_offset_start": start, "source_offset_end": last_valid},
+                        )
+                    )
+                offset = last_valid
+            else:
+                offset = ftyp_idx + 4
 
         # Compute SHA256 for all carved artifacts
         for art in artifacts:

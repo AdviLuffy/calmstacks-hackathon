@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import base64
 import struct
 from typing import Any, Mapping, Sequence
 
 from trace.recovery.formats.base import BaseFormatHandler
-from trace.recovery.models import FormatConfidence, FragmentCandidate, ValidationResult
+from trace.recovery.models import (
+    FormatConfidence,
+    FormatRecoveryResult,
+    FragmentCandidate,
+    RecoveryCategory,
+    ValidationResult,
+)
 
 _SOI = b"\xff\xd8"
 _EOI = b"\xff\xd9"
@@ -348,3 +355,120 @@ class JpegFormatHandler(BaseFormatHandler):
             warnings=tuple(warnings),
             metadata=metadata,
         )
+
+    def repair_or_recover(
+        self, data: bytes, filename: str = "", **kwargs: Any
+    ) -> FormatRecoveryResult:
+        """Deeply analyze and deterministically repair corrupted JPEG image data."""
+        if not data:
+            val = self.validate(b"")
+            return FormatRecoveryResult(
+                format_name=self.format_name,
+                is_recovered=False,
+                is_openable=False,
+                repaired_bytes=b"",
+                authentic_bytes=b"",
+                confidence_score=0.0,
+                category=RecoveryCategory.UNRECOVERABLE,
+                validation=val,
+                operations_performed=[],
+                unsupported_capabilities=["empty_input"],
+                diagnostics={"error": "empty_input"},
+            )
+
+        operations: list[str] = []
+        authentic_bytes = data
+        repaired = bytearray(data)
+
+        # 1. Preamble stripping: find SOI marker
+        soi_idx = repaired.find(_SOI)
+        if soi_idx > 0:
+            repaired = repaired[soi_idx:]
+            operations.append(f"stripped_preamble_garbage_{soi_idx}_bytes")
+        elif soi_idx == -1:
+            # Check if leading bytes look like JFIF/EXIF/DQT
+            if any(repaired[:16].find(m) != -1 for m in (b"\xff\xe0", b"\xff\xe1", b"\xff\xdb")):
+                repaired = bytearray(_SOI) + repaired
+                operations.append("synthesized_missing_soi_header")
+
+        # 2. Check for truncated EOI
+        has_sof = (_SOF0 in repaired) or (_SOF2 in repaired)
+        has_sos = _SOS in repaired
+        eoi_idx = repaired.rfind(_EOI)
+
+        if eoi_idx == -1 or (has_sos and eoi_idx < repaired.rfind(_SOS)):
+            # File is truncated mid-scan: append EOI to seal the entropy stream
+            repaired.extend(_EOI)
+            operations.append("synthesized_truncated_eoi_marker")
+        elif eoi_idx != -1 and eoi_idx + 2 < len(repaired):
+            # Trailing junk after EOI: strip trailing slack
+            slack_len = len(repaired) - (eoi_idx + 2)
+            if slack_len > 0:
+                repaired = repaired[: eoi_idx + 2]
+                operations.append(f"stripped_trailing_slack_{slack_len}_bytes")
+
+        repaired_bytes = bytes(repaired)
+        val = self.validate(repaired_bytes)
+
+        # Multi-engine openability test using PyMuPDF Pixmap
+        is_openable = False
+        width = 0
+        height = 0
+        channels = 0
+        try:
+            import pymupdf
+            pix = pymupdf.Pixmap(repaired_bytes)
+            if pix.width > 0 and pix.height > 0:
+                is_openable = True
+                width = pix.width
+                height = pix.height
+                channels = pix.n
+        except Exception:
+            is_openable = val.is_valid
+
+        synth_count = max(0, len(repaired_bytes) - len(authentic_bytes))
+        cat = (
+            RecoveryCategory.RECOVERED
+            if is_openable
+            else (
+                RecoveryCategory.PARTIAL
+                if (has_sof or has_sos)
+                else RecoveryCategory.UNRECOVERABLE
+            )
+        )
+
+        preview_data = (
+            f"data:image/jpeg;base64,{base64.b64encode(repaired_bytes).decode('ascii')}"
+            if is_openable
+            else ""
+        )
+
+        return FormatRecoveryResult(
+            format_name=self.format_name,
+            is_recovered=is_openable or val.is_valid,
+            is_openable=is_openable,
+            repaired_bytes=repaired_bytes,
+            authentic_bytes=authentic_bytes,
+            authentic_bytes_count=len(authentic_bytes),
+            synthesized_bytes_count=synth_count,
+            confidence_score=max(val.integrity_score * 100.0, 85.0 if is_openable else 20.0),
+            category=cat,
+            validation=val,
+            operations_performed=operations,
+            unsupported_capabilities=[
+                "progressive_ac_spectral_recovery_without_dht",
+                "severe_entropy_bitshift_desynchronization",
+            ],
+            diagnostics={
+                "width": width or val.metadata.get("width", 0),
+                "height": height or val.metadata.get("height", 0),
+                "channels": channels,
+                "has_soi": _SOI in repaired_bytes[:4],
+                "has_eoi": _EOI in repaired_bytes[-4:],
+                "has_sof": has_sof,
+                "has_sos": has_sos,
+            },
+            preview_type="image" if is_openable else "none",
+            preview_data=preview_data,
+        )
+

@@ -1,0 +1,125 @@
+{
+  "sample_id": "canonical_paper_001_c01_level_1",
+  "seed": 1017,
+  "provenance": "SYNTHETIC_GROUND_TRUTH",
+  "original_sha256": "e0216c99915f5fae84a62a6483f6c5041bfd6531636cd6ec31b5de4a560fa03e",
+  "corrupted_sha256": "9959594e53c252b362874c966712532164991c92266a8287d801be7f9aefb4b2",
+  "original_size_bytes": 2584,
+  "corrupted_size_bytes": 2514,
+  "original_inventory": {
+    "total_objects": 8,
+    "object_numbers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "streams_count": 3,
+    "pages_count": 1,
+    "fonts_count": 2,
+    "images_count": 1,
+    "tables_count": 1,
+    "figures_count": 1,
+    "equations_count": 0,
+    "total_text_length": 891
+  },
+  "corrupted_inventory": {
+    "total_objects": 8,
+    "object_numbers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "streams_count": 3,
+    "pages_count": 1,
+    "fonts_count": 2,
+    "images_count": 1,
+    "tables_count": 1,
+    "figures_count": 1,
+    "equations_count": 0,
+    "total_text_length": 826
+  },
+  "original_text": [
+    "TRACE Synthetic Benchmark Document Case 710888",
+    "TRACE Forensic Laboratory",
+    "Ground Truth Forensic Evaluation Case 710888",
+    "TRACE Synthetic Document Generator v1.0",
+    "TRACE SYNTHETIC FORENSICS BENCHMARK -- CASE 710888 -- PAGE 1 OF 1",
+    "Author: Dr. Alex Vance, TRACE Forensic Laboratory, Case 710888",
+    "Abstract",
+    "This synthetic ground-truth document case 710888 provides deterministic evaluation tokens.",
+    "1. Introduction and Problem Space",
+    "Column 0 introduces the sector carving challenge when metadata structures are obliterated.",
+    "Table 1: Benchmark Reconstruction Baseline",
+    "Metric | Deterministic | Target Recovery",
+    "Byte Recovery | 97.7% | 99.0%",
+    "Object Fidelity | 22/22 | 100%",
+    "2. Mathematical Formulation",
+    "E = mc^2 + \\int_0^1 f(x",
+    "Page 1 of 1"
+  ],
+  "original_images": [],
+  "original_tables": [],
+  "original_figures": [],
+  "original_equations": [],
+  "original_metadata": {
+    "Title": "Synthetic Ground Truth Document"
+  },
+  "removed_objects": [],
+  "surviving_objects": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "damaged_objects": [],
+  "corrupted_byte_regions": [
+    [
+      951,
+      1021
+    ]
+  ],
+  "expected_recoverable_content": {
+    "surviving_objects_count": 8,
+    "expected_surviving_bytes": 2514
+  },
+  "expected_unrecoverable_content": {
+    "removed_objects_count": 0
+  },
+  "ml_fragment_labels": {
+    "blk_0000": "PDF_HEADER",
+    "blk_0001": "PDF_STREAM",
+    "blk_0002": "PDF_OBJECT",
+    "blk_0003": "PDF_STREAM",
+    "blk_0004": "PDF_STREAM",
+    "blk_0005": "UNKNOWN",
+    "blk_0006": "PDF_STREAM",
+    "blk_0007": "UNKNOWN",
+    "blk_0008": "XREF",
+    "blk_0009": "XREF"
+  },
+  "ml_recovery_states": {
+    "1": "INTACT",
+    "2": "INTACT",
+    "3": "INTACT",
+    "4": "INTACT",
+    "5": "INTACT",
+    "6": "INTACT",
+    "7": "INTACT",
+    "8": "INTACT"
+  },
+  "ml_pairwise_relationships": []
+}

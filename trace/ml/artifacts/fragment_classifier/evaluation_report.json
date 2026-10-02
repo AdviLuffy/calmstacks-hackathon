@@ -1,0 +1,106 @@
+{
+  "model_name": "ForensicFragmentClassifier",
+  "split_name": "test",
+  "sample_count": 179,
+  "accuracy": 1.0,
+  "macro_f1": 1.0,
+  "weighted_f1": 1.0,
+  "abstention_rate": 0.0,
+  "mean_latency_us": 32271.16,
+  "per_class": {
+    "PAGE_OBJECT": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 21
+    },
+    "PDF_HEADER": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 6
+    },
+    "PDF_OBJECT": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 9
+    },
+    "TEXT_STREAM": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 130
+    },
+    "TRAILER": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 4
+    },
+    "XREF": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 9
+    }
+  },
+  "classes": [
+    "PAGE_OBJECT",
+    "PDF_HEADER",
+    "PDF_OBJECT",
+    "TEXT_STREAM",
+    "TRAILER",
+    "XREF"
+  ],
+  "confusion_matrix": [
+    [
+      21,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      6,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      9,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      130,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      4,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      9
+    ]
+  ]
+}

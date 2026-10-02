@@ -1,0 +1,19 @@
+{
+  "sample_id": "safedocs_truncated_stream_02",
+  "source_name": "PDF Association SafeDocs Issue Corpus",
+  "source_url": "https://github.com/pdf-association/safedocs",
+  "license_type": "SAFEDOCS_RESEARCH",
+  "license_url": "https://github.com/pdf-association/safedocs/blob/main/LICENSE",
+  "sha256": "09bfb8e71ad2c898b1b4130fffd4e9a5ba6ebd484347e2cdedb032dde93b735d",
+  "file_size_bytes": 336,
+  "has_verified_ground_truth": false,
+  "associated_original_sha256": null,
+  "observed_damage_classes": [
+    "TRUNCATED_BITSTREAM_NO_EOF",
+    "ERASED_SECTOR_NULL_RUNS"
+  ],
+  "safety_warnings": [
+    "Truncated bitstream with null run sectors."
+  ],
+  "notes": "Bitstream abruptly truncated across object stream boundary without EOF marker."
+}
